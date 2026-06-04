@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"net/mail"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -30,6 +31,12 @@ func (d *Dialer) Dial() (mailer.Sender, error) {
 	return d.Dialer.Dial()
 }
 
+// Interface types for a sending profile
+const (
+	InterfaceTypeSMTP = "SMTP"
+	InterfaceTypeHTTP = "HTTP"
+)
+
 // SMTP contains the attributes needed to handle the sending of campaign emails
 type SMTP struct {
 	Id               int64     `json:"id" gorm:"column:id; primary_key:yes"`
@@ -43,6 +50,27 @@ type SMTP struct {
 	IgnoreCertErrors bool      `json:"ignore_cert_errors"`
 	Headers          []Header  `json:"headers"`
 	ModifiedDate     time.Time `json:"modified_date"`
+
+	// HTTP API interface fields. These are only used when Interface is
+	// InterfaceTypeHTTP. They let a sending profile deliver email by calling
+	// an arbitrary HTTP REST API (e.g. a mail-sending provider) rather than
+	// connecting to an SMTP server.
+	HTTPMethod      string `json:"http_method" gorm:"column:http_method"`
+	HTTPURL         string `json:"http_url" gorm:"column:http_url"`
+	HTTPHeaders     string `json:"http_headers" gorm:"column:http_headers"`
+	HTTPContentType string `json:"http_content_type" gorm:"column:http_content_type"`
+	HTTPBody        string `json:"http_body" gorm:"column:http_body"`
+
+	// HTTP rate limiting. A value of 0 for a given window means that window is
+	// not rate limited. Limits are enforced per sending profile and counted in
+	// HTTP requests (so one batched request to many recipients counts once).
+	HTTPRatePerSecond int `json:"http_rate_per_second" gorm:"column:http_rate_per_second"`
+	HTTPRatePerMinute int `json:"http_rate_per_minute" gorm:"column:http_rate_per_minute"`
+	HTTPRatePerHour   int `json:"http_rate_per_hour" gorm:"column:http_rate_per_hour"`
+
+	// HTTPBatchSize is the number of recipients to include in a single HTTP
+	// request. A value <= 1 sends one request per recipient.
+	HTTPBatchSize int `json:"http_batch_size" gorm:"column:http_batch_size"`
 }
 
 // Header contains the fields and methods for a sending profile to have
@@ -69,6 +97,18 @@ var ErrHostNotSpecified = errors.New("No SMTP Host specified")
 // ErrInvalidHost indicates that the SMTP server string is invalid
 var ErrInvalidHost = errors.New("Invalid SMTP server address")
 
+// ErrHTTPURLNotSpecified is thrown when an HTTP sending profile has no URL
+var ErrHTTPURLNotSpecified = errors.New("No HTTP URL specified")
+
+// ErrHTTPMethodNotSpecified is thrown when an HTTP sending profile has no method
+var ErrHTTPMethodNotSpecified = errors.New("No HTTP method specified")
+
+// ErrHTTPBodyNotSpecified is thrown when an HTTP sending profile has no body
+var ErrHTTPBodyNotSpecified = errors.New("No HTTP request body specified")
+
+// ErrInvalidHTTPURL indicates that the HTTP URL is not a valid absolute URL
+var ErrInvalidHTTPURL = errors.New("Invalid HTTP URL")
+
 // TableName specifies the database tablename for Gorm to use
 func (s SMTP) TableName() string {
 	return "smtp"
@@ -76,6 +116,11 @@ func (s SMTP) TableName() string {
 
 // Validate ensures that SMTP configs/connections are valid
 func (s *SMTP) Validate() error {
+	// HTTP sending profiles use a separate set of fields, so they have their
+	// own validation rules.
+	if s.Interface == InterfaceTypeHTTP {
+		return s.validateHTTP()
+	}
 	switch {
 	case s.FromAddress == "":
 		return ErrFromAddressNotSpecified
@@ -108,8 +153,36 @@ func validateFromAddress(email string) bool {
 	return r.MatchString(email)
 }
 
+// validateHTTP ensures that an HTTP sending profile has the required fields
+// and that the configured URL is a valid absolute HTTP(S) URL.
+func (s *SMTP) validateHTTP() error {
+	switch {
+	case s.FromAddress == "":
+		return ErrFromAddressNotSpecified
+	case !validateFromAddress(s.FromAddress):
+		return ErrInvalidFromAddress
+	case s.HTTPURL == "":
+		return ErrHTTPURLNotSpecified
+	case s.HTTPMethod == "":
+		return ErrHTTPMethodNotSpecified
+	case s.HTTPBody == "":
+		return ErrHTTPBodyNotSpecified
+	}
+	u, err := url.Parse(s.HTTPURL)
+	if err != nil || !u.IsAbs() || (u.Scheme != "http" && u.Scheme != "https") {
+		return ErrInvalidHTTPURL
+	}
+	return nil
+}
+
 // GetDialer returns a dialer for the given SMTP profile
 func (s *SMTP) GetDialer() (mailer.Dialer, error) {
+	// HTTP sending profiles deliver mail over an HTTP API instead of SMTP, so
+	// they return a dedicated dialer that the mailer recognizes and routes
+	// through the HTTP send path.
+	if s.Interface == InterfaceTypeHTTP {
+		return &HTTPDialer{profile: *s}, nil
+	}
 	// Setup the message and dial
 	hp := strings.Split(s.Host, ":")
 	if len(hp) < 2 {

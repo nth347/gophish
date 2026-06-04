@@ -49,47 +49,115 @@
                         <label class="control-label" for="name">Name:</label>
                         <input type="text" class="form-control" placeholder="Profile name" id="name" autofocus />
                         <label class="control-label" for="interface_type">Interface Type:</label>
-                        <input type="text" class="form-control" value="SMTP" id="interface_type" disabled />
+                        <select class="form-control" id="interface_type">
+                            <option value="SMTP">SMTP</option>
+                            <option value="HTTP">HTTP (REST API)</option>
+                        </select>
                         <label class="control-label" for="from">SMTP From: <i class="fa fa-question-circle"
                                 data-toggle="tooltip" data-placement="right" title="Set this to an email address from your sending domain to bypass SPF-checks. You can set the Envelope Sender in Email Templates. The Envelope Sender is shown to the user."></i></label>
                         <input type="text" class="form-control" placeholder="test@example.com" id="from"
                             required />
-                        <label class="control-label" for="host">Host:</label>
-                        <input type="text" class="form-control" placeholder="smtp.example.com:25" id="host" required />
-                        <label class="control-label" for="username">Username:</label>
-                        <input type="text" class="form-control" placeholder="Username" id="username" />
-                        <label class="control-label" for="password">Password:</label>
-                        <input type="password" class="form-control" placeholder="Password" id="password" />
                         <div class="checkbox checkbox-primary">
                             <input id="ignore_cert_errors" type="checkbox" checked>
                             <label for="ignore_cert_errors">Ignore Certificate Errors <i class="fa fa-question-circle"
                                     data-toggle="tooltip" data-placement="right" title="Ignore common certificate errors such as self-signed certs (exposes you to MiTM attacks - use carefully!)"></i></label>
                         </div>
                     </div>
-                    <fieldset class="form-group">
-                        <label class="control-label input-group">Email Headers:</label>
-                        <div class="col-md-4">
-                            <input type="text" class="form-control" name="headerKey" id="headerKey" placeholder="X-Custom-Header">
+                    <!-- SMTP-specific fields -->
+                    <div id="smtp_fields">
+                        <div class="form-group">
+                            <label class="control-label" for="host">Host:</label>
+                            <input type="text" class="form-control" placeholder="smtp.example.com:25" id="host" />
+                            <label class="control-label" for="username">Username:</label>
+                            <input type="text" class="form-control" placeholder="Username" id="username" />
+                            <label class="control-label" for="password">Password:</label>
+                            <input type="password" class="form-control" placeholder="Password" id="password" />
                         </div>
-                        <div class="col-md-4">
-                            <input type="text" class="form-control" name="headerValue" id="headerValue" placeholder='{{"{{"}}.URL{{"}}"}}-gophish'>
+                        <fieldset class="form-group">
+                            <label class="control-label input-group">Email Headers:</label>
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" name="headerKey" id="headerKey" placeholder="X-Custom-Header">
+                            </div>
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" name="headerValue" id="headerValue" placeholder='{{"{{"}}.URL{{"}}"}}-gophish'>
+                            </div>
+                            <div class="col-md-2">
+                                <button id="addCustomHeader" class="btn btn-danger btn-headers" type="button"><i class="fa fa-plus"></i> Add
+                                    Custom Header</button>
+                            </div>
+                        </fieldset>
+                        <table id="headersTable" class="table table-hover table-striped table-condensed">
+                            <thead>
+                                <tr>
+                                    <th>Header</th>
+                                    <th>Value</th>
+                                    <th class="no-sort"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- HTTP (REST API)-specific fields -->
+                    <div id="http_fields" style="display:none;">
+                        <div class="form-group">
+                            <label class="control-label" for="http_method">HTTP Method:</label>
+                            <select class="form-control" id="http_method">
+                                <option value="POST">POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="PATCH">PATCH</option>
+                                <option value="GET">GET</option>
+                                <option value="DELETE">DELETE</option>
+                            </select>
+                            <label class="control-label" for="http_url">URL:</label>
+                            <input type="text" class="form-control" placeholder="https://api.provider.com/email/send" id="http_url" />
+                            <label class="control-label" for="http_headers">Headers <i class="fa fa-question-circle"
+                                    data-toggle="tooltip" data-placement="right" title="One header per line in the form 'Key: Value'. This is where you set your API token, e.g. 'Authorization: Bearer YOUR_API_TOKEN'."></i>:</label>
+                            <textarea class="form-control" id="http_headers" rows="3" placeholder="Authorization: Bearer YOUR_API_TOKEN&#10;Accept: application/json"></textarea>
+                            <label class="control-label" for="http_content_type">Content Type:</label>
+                            <input type="text" class="form-control" placeholder="application/json" id="http_content_type" value="application/json" />
+                            <label class="control-label" for="http_body">Body <i class="fa fa-question-circle"
+                                    data-toggle="tooltip" data-placement="right" title="Request body sent to the API. Placeholders: {{"{{"}}.To{{"}}"}} (first recipient), {{"{{"}}.Recipients{{"}}"}} (all recipients in this request), {{"{{"}}.From{{"}}"}}, {{"{{"}}.FromName{{"}}"}}, {{"{{"}}.Subject{{"}}"}}, {{"{{"}}.HTML{{"}}"}}, {{"{{"}}.Text{{"}}"}}, {{"{{"}}.Attachments{{"}}"}} (each has .Content (base64), .Filename, .Type). Pipe a value through 'json' (e.g. {{"{{"}}.HTML | json{{"}}"}}) to safely JSON-escape it. For multiple recipients use {{"{{"}}.Recipients | json{{"}}"}} with 'Recipients per request' below. See the placeholder text for an example attachments array."></i>:</label>
+                            <textarea class="form-control" id="http_body" rows="14" placeholder='{
+    "to": "{{"{{"}}.To{{"}}"}}",
+    "from": "{{"{{"}}.From{{"}}"}}",
+    "subject": {{"{{"}}.Subject | json{{"}}"}},
+    "html": {{"{{"}}.HTML | json{{"}}"}},
+    "text": {{"{{"}}.Text | json{{"}}"}},
+    "attachments": [{{"{{"}}range $i, $a := .Attachments{{"}}"}}{{"{{"}}if $i{{"}}"}},{{"{{"}}end{{"}}"}}{
+        "content": {{"{{"}}$a.Content | json{{"}}"}},
+        "filename": {{"{{"}}$a.Filename | json{{"}}"}},
+        "type": {{"{{"}}$a.Type | json{{"}}"}},
+        "disposition": "attachment"
+    }{{"{{"}}end{{"}}"}}]
+}'></textarea>
+                            <label class="control-label" for="http_batch_size">Recipients per request <i class="fa fa-question-circle"
+                                    data-toggle="tooltip" data-placement="right" title="Number of recipients to include in a single HTTP request via {{"{{"}}.Recipients{{"}}"}}. Leave at 1 for one request per recipient (required for per-recipient personalization and tracking). Set higher to batch multiple users into one API call."></i>:</label>
+                            <input type="number" min="1" class="form-control" id="http_batch_size" value="1" />
+                            <label class="control-label">Rate Limit <i class="fa fa-question-circle"
+                                    data-toggle="tooltip" data-placement="right" title="Maximum number of HTTP requests allowed per time window. 0 means no limit. Limits are counted in requests, so a batched request to many recipients counts as one."></i>:</label>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="input-group">
+                                        <input type="number" min="0" class="form-control" id="http_rate_per_second" value="0" placeholder="0" />
+                                        <span class="input-group-addon">/ second</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="input-group">
+                                        <input type="number" min="0" class="form-control" id="http_rate_per_minute" value="0" placeholder="0" />
+                                        <span class="input-group-addon">/ minute</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="input-group">
+                                        <input type="number" min="0" class="form-control" id="http_rate_per_hour" value="0" placeholder="0" />
+                                        <span class="input-group-addon">/ hour</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-md-2">
-                            <button id="addCustomHeader" class="btn btn-danger btn-headers" type="button"><i class="fa fa-plus"></i> Add
-                                Custom Header</button>
-                        </div>
-                    </fieldset>
-                    <table id="headersTable" class="table table-hover table-striped table-condensed">
-                        <thead>
-                            <tr>
-                                <th>Header</th>
-                                <th>Value</th>
-                                <th class="no-sort"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        </tbody>
-                    </table>
+                    </div>
                     <button type="button" data-toggle="modal" data-backdrop="static" data-target="#sendTestEmailModal"
                         class="btn btn-primary"><i class="fa fa-envelope"></i> Send Test Email</button>
                 </form>

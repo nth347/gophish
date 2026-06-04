@@ -1,5 +1,17 @@
 var profiles = []
 
+// toggleInterface shows the SMTP or HTTP specific fields depending on the
+// currently selected interface type.
+function toggleInterface() {
+    if ($("#interface_type").val() === "HTTP") {
+        $("#smtp_fields").hide()
+        $("#http_fields").show()
+    } else {
+        $("#http_fields").hide()
+        $("#smtp_fields").show()
+    }
+}
+
 // Attempts to send a test email by POSTing to /campaigns/
 function sendTestEmail() {
     var headers = [];
@@ -17,12 +29,22 @@ function sendTestEmail() {
         position: $("input[name=to_position]").val(),
         url: '',
         smtp: {
+            interface_type: $("#interface_type").val(),
             from_address: $("#from").val(),
             host: $("#host").val(),
             username: $("#username").val(),
             password: $("#password").val(),
             ignore_cert_errors: $("#ignore_cert_errors").prop("checked"),
             headers: headers,
+            http_method: $("#http_method").val(),
+            http_url: $("#http_url").val(),
+            http_headers: $("#http_headers").val(),
+            http_content_type: $("#http_content_type").val(),
+            http_body: $("#http_body").val(),
+            http_batch_size: parseInt($("#http_batch_size").val(), 10) || 0,
+            http_rate_per_second: parseInt($("#http_rate_per_second").val(), 10) || 0,
+            http_rate_per_minute: parseInt($("#http_rate_per_minute").val(), 10) || 0,
+            http_rate_per_hour: parseInt($("#http_rate_per_hour").val(), 10) || 0,
         }
     }
     btnHtml = $("#sendTestModalSubmit").html()
@@ -59,6 +81,15 @@ function save(idx) {
     profile.username = $("#username").val()
     profile.password = $("#password").val()
     profile.ignore_cert_errors = $("#ignore_cert_errors").prop("checked")
+    profile.http_method = $("#http_method").val()
+    profile.http_url = $("#http_url").val()
+    profile.http_headers = $("#http_headers").val()
+    profile.http_content_type = $("#http_content_type").val()
+    profile.http_body = $("#http_body").val()
+    profile.http_batch_size = parseInt($("#http_batch_size").val(), 10) || 0
+    profile.http_rate_per_second = parseInt($("#http_rate_per_second").val(), 10) || 0
+    profile.http_rate_per_minute = parseInt($("#http_rate_per_minute").val(), 10) || 0
+    profile.http_rate_per_hour = parseInt($("#http_rate_per_hour").val(), 10) || 0
     if (idx != -1) {
         profile.id = profiles[idx].id
         api.SMTPId.put(profile)
@@ -93,7 +124,17 @@ function dismiss() {
     $("#username").val("")
     $("#password").val("")
     $("#ignore_cert_errors").prop("checked", true)
+    $("#http_method").val("POST")
+    $("#http_url").val("")
+    $("#http_headers").val("")
+    $("#http_content_type").val("application/json")
+    $("#http_body").val("")
+    $("#http_batch_size").val("1")
+    $("#http_rate_per_second").val("0")
+    $("#http_rate_per_minute").val("0")
+    $("#http_rate_per_hour").val("0")
     $("#headersTable").dataTable().DataTable().clear().draw()
+    toggleInterface()
     $("#modal").modal('hide')
 }
 
@@ -162,12 +203,22 @@ function edit(idx) {
         $("#username").val(profile.username)
         $("#password").val(profile.password)
         $("#ignore_cert_errors").prop("checked", profile.ignore_cert_errors)
+        $("#http_method").val(profile.http_method || "POST")
+        $("#http_url").val(profile.http_url)
+        $("#http_headers").val(profile.http_headers)
+        $("#http_content_type").val(profile.http_content_type)
+        $("#http_body").val(profile.http_body)
+        $("#http_batch_size").val(profile.http_batch_size || 1)
+        $("#http_rate_per_second").val(profile.http_rate_per_second || 0)
+        $("#http_rate_per_minute").val(profile.http_rate_per_minute || 0)
+        $("#http_rate_per_hour").val(profile.http_rate_per_hour || 0)
         $.each(profile.headers, function (i, record) {
             addCustomHeader(record.key, record.value)
         });
     } else {
         $("#profileModalLabel").text("New Sending Profile")
     }
+    toggleInterface()
 }
 
 function copy(idx) {
@@ -183,6 +234,16 @@ function copy(idx) {
     $("#username").val(profile.username)
     $("#password").val(profile.password)
     $("#ignore_cert_errors").prop("checked", profile.ignore_cert_errors)
+    $("#http_method").val(profile.http_method || "POST")
+    $("#http_url").val(profile.http_url)
+    $("#http_headers").val(profile.http_headers)
+    $("#http_content_type").val(profile.http_content_type)
+    $("#http_body").val(profile.http_body)
+    $("#http_batch_size").val(profile.http_batch_size || 1)
+    $("#http_rate_per_second").val(profile.http_rate_per_second || 0)
+    $("#http_rate_per_minute").val(profile.http_rate_per_minute || 0)
+    $("#http_rate_per_hour").val(profile.http_rate_per_hour || 0)
+    toggleInterface()
 }
 
 function load() {
@@ -308,6 +369,10 @@ $(document).ready(function () {
     });
     $("#sendTestEmailModal").on("hidden.bs.modal", function (event) {
         dismissSendTestEmailModal()
+    })
+    // Toggle SMTP/HTTP fields when the interface type changes
+    $("#interface_type").on('change', function () {
+        toggleInterface()
     })
     // Code to deal with custom email headers
     $("#addCustomHeader").on('click', function () {

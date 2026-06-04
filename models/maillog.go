@@ -256,6 +256,67 @@ func (m *MailLog) Generate(msg *gomail.Message) error {
 	return nil
 }
 
+// GenerateHTTP renders the recipient, sender, subject and body for this
+// maillog into a mailer.EmailContent. It is used by the HTTP API transport,
+// which needs the individual components of a message rather than a serialized
+// MIME body.
+func (m *MailLog) GenerateHTTP() (*mailer.EmailContent, error) {
+	r, err := GetResult(m.RId)
+	if err != nil {
+		return nil, err
+	}
+	c := m.cachedCampaign
+	if c == nil {
+		campaign, err := GetCampaignMailContext(m.CampaignId, m.UserId)
+		if err != nil {
+			return nil, err
+		}
+		c = &campaign
+	}
+
+	f, err := mail.ParseAddress(c.Template.EnvelopeSender)
+	if err != nil {
+		f, err = mail.ParseAddress(c.SMTP.FromAddress)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	ptx, err := NewPhishingTemplateContext(c, r.BaseRecipient, r.RId)
+	if err != nil {
+		return nil, err
+	}
+
+	content := &mailer.EmailContent{
+		From:       f.Address,
+		FromName:   f.Name,
+		To:         r.Email,
+		Recipients: []string{r.Email},
+	}
+
+	content.Subject, err = ExecuteTemplate(c.Template.Subject, ptx)
+	if err != nil {
+		log.Warn(err)
+	}
+	if c.Template.HTML != "" {
+		content.HTML, err = ExecuteTemplate(c.Template.HTML, ptx)
+		if err != nil {
+			log.Warn(err)
+		}
+	}
+	if c.Template.Text != "" {
+		content.Text, err = ExecuteTemplate(c.Template.Text, ptx)
+		if err != nil {
+			log.Warn(err)
+		}
+	}
+	content.Attachments, err = buildHTTPAttachments(c.Template.Attachments, ptx)
+	if err != nil {
+		return nil, err
+	}
+	return content, nil
+}
+
 // GetQueuedMailLogs returns the mail logs that are queued up for the given minute.
 func GetQueuedMailLogs(t time.Time) ([]*MailLog, error) {
 	ms := []*MailLog{}

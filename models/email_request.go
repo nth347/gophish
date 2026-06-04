@@ -178,3 +178,53 @@ func (s *EmailRequest) Generate(msg *gomail.Message) error {
 func (s *EmailRequest) GetDialer() (mailer.Dialer, error) {
 	return s.SMTP.GetDialer()
 }
+
+// GenerateHTTP renders the recipient, sender, subject and body for this test
+// email request into a mailer.EmailContent. It is used by the HTTP API
+// transport when sending a test email through an HTTP sending profile.
+func (s *EmailRequest) GenerateHTTP() (*mailer.EmailContent, error) {
+	f, err := mail.ParseAddress(s.getFromAddress())
+	if err != nil {
+		return nil, err
+	}
+
+	ptx, err := NewPhishingTemplateContext(s, s.BaseRecipient, s.RId)
+	if err != nil {
+		return nil, err
+	}
+
+	url, err := ExecuteTemplate(s.URL, ptx)
+	if err != nil {
+		return nil, err
+	}
+	s.URL = url
+
+	content := &mailer.EmailContent{
+		From:       f.Address,
+		FromName:   f.Name,
+		To:         s.Email,
+		Recipients: []string{s.Email},
+	}
+
+	content.Subject, err = ExecuteTemplate(s.Template.Subject, ptx)
+	if err != nil {
+		log.Error(err)
+	}
+	if s.Template.HTML != "" {
+		content.HTML, err = ExecuteTemplate(s.Template.HTML, ptx)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	if s.Template.Text != "" {
+		content.Text, err = ExecuteTemplate(s.Template.Text, ptx)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	content.Attachments, err = buildHTTPAttachments(s.Template.Attachments, ptx)
+	if err != nil {
+		return nil, err
+	}
+	return content, nil
+}
