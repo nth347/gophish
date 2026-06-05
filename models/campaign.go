@@ -6,7 +6,6 @@ import (
 	"time"
 
 	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/webhook"
 	"github.com/jinzhu/gorm"
 	"github.com/sirupsen/logrus"
 )
@@ -160,14 +159,17 @@ func AddEvent(e *Event, campaignID int64) error {
 
 	whs, err := GetActiveWebhooks()
 	if err == nil {
-		whEndPoints := []webhook.EndPoint{}
-		for _, wh := range whs {
-			whEndPoints = append(whEndPoints, webhook.EndPoint{
-				URL:    wh.URL,
-				Secret: wh.Secret,
-			})
+		for i := range whs {
+			wh := whs[i]
+			// Only notify webhooks configured to receive this event type.
+			if !wh.HandlesEvent(e.Message) {
+				continue
+			}
+			// Send a copy so the dispatch goroutine doesn't race with the
+			// db.Save below, which sets the event's ID.
+			ev := *e
+			go wh.Notify(&ev)
 		}
-		webhook.SendAll(whEndPoints, e)
 	} else {
 		log.Errorf("error getting active webhooks: %v", err)
 	}

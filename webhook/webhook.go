@@ -77,6 +77,44 @@ func SendAll(endPoints []EndPoint, data interface{}) {
 	}
 }
 
+// SendTelegram sends a plain-text message to a Telegram chat using the
+// Telegram Bot API (https://core.telegram.org/bots/api#sendmessage).
+func SendTelegram(botToken, chatID, text string) error {
+	return senderInstance.SendTelegram(botToken, chatID, text)
+}
+
+// SendTelegram contains the implementation of sending a message via the
+// Telegram Bot API.
+func (ds defaultSender) SendTelegram(botToken, chatID, text string) error {
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	jsonData, err := json.Marshal(map[string]string{
+		"chat_id": chatID,
+		"text":    text,
+	})
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := ds.client.Do(req)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= MinHTTPStatusErrorCode {
+		errMsg := fmt.Sprintf("telegram API returned a status code outside the 2XX range: %d", resp.StatusCode)
+		log.Error(errMsg)
+		return errors.New(errMsg)
+	}
+	return nil
+}
+
 // Send contains the implementation of sending webhook to an EndPoint
 func (ds defaultSender) Send(endPoint EndPoint, data interface{}) error {
 	jsonData, err := json.Marshal(data)

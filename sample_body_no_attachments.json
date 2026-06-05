@@ -1,0 +1,7 @@
+{
+    "to": "{{.To}}",
+    "from": "{{.From}}",
+    "subject": {{.Subject | json}},
+    "html": {{.HTML | json}},
+    "text": {{.Text | json}}
+}

@@ -46,14 +46,68 @@
                     <input type="text" class="form-control" placeholder="Name" id="name" required autofocus />
                 </div>
 
-                <label class="control-label" for="url">URL:</label>
+                <label class="control-label" for="type">Type:</label>
                 <div class="form-group">
-                    <input type="text" class="form-control" placeholder="https://example.com/webhook1" id="url" required />
+                    <select class="form-control" id="type">
+                        <option value="standard">Standard (HTTP)</option>
+                        <option value="telegram">Telegram</option>
+                    </select>
                 </div>
 
-                <label class="control-label" for="secret">Secret:</label>
+                <!-- Standard (HTTP) webhook fields -->
+                <div id="standard_fields">
+                    <label class="control-label" for="url">URL:</label>
+                    <div class="form-group">
+                        <input type="text" class="form-control" placeholder="https://example.com/webhook1" id="url" />
+                    </div>
+
+                    <label class="control-label" for="secret">Secret:</label>
+                    <div class="form-group">
+                        <input type="text" class="form-control" placeholder="Secret" id="secret" />
+                    </div>
+                </div>
+
+                <!-- Telegram webhook fields -->
+                <div id="telegram_fields" style="display:none;">
+                    <label class="control-label" for="telegram_bot_token">Bot Token <i class="fa fa-question-circle"
+                            data-toggle="tooltip" data-placement="right"
+                            title="The token of your Telegram bot, obtained from @BotFather (e.g. 123456:ABC-DEF...)."></i>:</label>
+                    <div class="form-group">
+                        <input type="text" class="form-control" placeholder="123456789:ABCdef..." id="telegram_bot_token" />
+                    </div>
+
+                    <label class="control-label" for="telegram_chat_id">Chat ID <i class="fa fa-question-circle"
+                            data-toggle="tooltip" data-placement="right"
+                            title="The chat/channel/group ID to send notifications to. Get it from @userinfobot or the getUpdates API."></i>:</label>
+                    <div class="form-group">
+                        <input type="text" class="form-control" placeholder="-1001234567890" id="telegram_chat_id" />
+                    </div>
+                </div>
+
+                <label class="control-label">Notify on events <i class="fa fa-question-circle"
+                        data-toggle="tooltip" data-placement="right"
+                        title="Which campaign events trigger this webhook. By default only Submitted Data is sent."></i>:</label>
                 <div class="form-group">
-                    <input type="text" class="form-control" placeholder="Secret" id="secret" required />
+                    <div class="checkbox checkbox-primary" style="margin:0">
+                        <input type="checkbox" id="event_sent" value="sent" />
+                        <label for="event_sent">Email Sent</label>
+                    </div>
+                    <div class="checkbox checkbox-primary" style="margin:0">
+                        <input type="checkbox" id="event_opened" value="opened" />
+                        <label for="event_opened">Email Opened</label>
+                    </div>
+                    <div class="checkbox checkbox-primary" style="margin:0">
+                        <input type="checkbox" id="event_clicked" value="clicked" />
+                        <label for="event_clicked">Clicked Link</label>
+                    </div>
+                    <div class="checkbox checkbox-primary" style="margin:0">
+                        <input type="checkbox" id="event_submitted" value="submitted" />
+                        <label for="event_submitted">Submitted Data</label>
+                    </div>
+                    <div class="checkbox checkbox-primary" style="margin:0">
+                        <input type="checkbox" id="event_reported" value="reported" />
+                        <label for="event_reported">Email Reported</label>
+                    </div>
                 </div>
 
                 <div class="checkbox checkbox-primary">

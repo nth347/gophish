@@ -94,8 +94,12 @@ func (as *Server) ValidateWebhook(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
 			return
 		}
-		payload := validationEvent{Success: true}
-		err = webhook.Send(webhook.EndPoint{URL: wh.URL, Secret: wh.Secret}, payload)
+		if wh.Type == models.WebhookTypeTelegram {
+			err = webhook.SendTelegram(wh.TelegramBotToken, wh.TelegramChatID, "🎣 Gophish: webhook test successful.")
+		} else {
+			payload := validationEvent{Success: true}
+			err = webhook.Send(webhook.EndPoint{URL: wh.URL, Secret: wh.Secret}, payload)
+		}
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 			return
