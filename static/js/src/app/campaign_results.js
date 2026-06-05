@@ -199,6 +199,50 @@ function completeCampaign() {
     })
 }
 
+// extractCredential returns the value of the first payload field (in sorted key
+// order) whose key contains any of the given needles. Internal fields are
+// skipped, and array values are joined.
+function extractCredential(payload, needles) {
+    var keys = Object.keys(payload).sort()
+    for (var i = 0; i < keys.length; i++) {
+        var k = keys[i]
+        if (k == "rid" || k == "__original_url") {
+            continue
+        }
+        var lk = k.toLowerCase()
+        for (var j = 0; j < needles.length; j++) {
+            if (lk.indexOf(needles[j]) !== -1) {
+                var v = payload[k]
+                return $.isArray(v) ? v.join(", ") : v
+            }
+        }
+    }
+    return ""
+}
+
+// buildCredentialsScope collects the captured credentials (username, password,
+// tokens) from every "Submitted Data" event in the campaign timeline.
+function buildCredentialsScope() {
+    var rows = []
+    $.each(campaign.timeline, function (i, event) {
+        if (event.message !== "Submitted Data" || !event.details) {
+            return true
+        }
+        var details = JSON.parse(event.details)
+        if (!details.payload) {
+            return true
+        }
+        rows.push({
+            email: event.email,
+            username: extractCredential(details.payload, ["user", "email", "login"]),
+            password: extractCredential(details.payload, ["pass"]),
+            tokens: extractCredential(details.payload, ["token", "cookie", "session"]),
+            submitted_at: event.time
+        })
+    })
+    return rows
+}
+
 // Exports campaign results as a CSV file
 function exportAsCSV(scope) {
     exportHTML = $("#exportButton").html()
@@ -210,6 +254,13 @@ function exportAsCSV(scope) {
             break;
         case "events":
             csvScope = campaign.timeline
+            break;
+        case "credentials":
+            csvScope = buildCredentialsScope()
+            if (csvScope.length === 0) {
+                errorFlash("No captured credentials to export for this campaign")
+                return
+            }
             break;
     }
     if (!csvScope) {
