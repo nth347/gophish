@@ -291,6 +291,75 @@ function replay(event_idx) {
     }
 }
 
+// viewCredentials displays the data submitted for a "Submitted Data" event in a
+// modal, and lets the user copy it to the clipboard.
+function viewCredentials(event_idx) {
+    var request = campaign.timeline[event_idx]
+    var details = JSON.parse(request.details)
+    if (!details.payload) {
+        Swal.fire("No Data", "No submitted data was captured for this event.", "info")
+        return
+    }
+    var rows = ""
+    var copyText = ""
+    $.each(Object.keys(details.payload), function (i, param) {
+        // Skip internal parameters that aren't submitted credentials
+        if (param == "rid" || param == "__original_url") {
+            return true;
+        }
+        var value = details.payload[param]
+        // Submitted values are arrays (Go url.Values); join them for display
+        var displayValue = $.isArray(value) ? value.join(", ") : value
+        rows += '<tr><td style="font-weight:bold; text-align:left">' + escapeHtml(param) + '</td>'
+        rows += '<td style="text-align:left; word-break:break-all">' + escapeHtml(displayValue) + '</td></tr>'
+        copyText += param + ": " + displayValue + "\n"
+    })
+    if (rows == "") {
+        Swal.fire("No Data", "No submitted data was captured for this event.", "info")
+        return
+    }
+    var html = '<table class="table table-condensed table-bordered" style="margin-bottom:10px">'
+    html += '<thead><tr><th>Parameter</th><th>Value</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    html += '<textarea id="credentialsCopyArea" class="form-control" rows="4" readonly '
+    html += 'style="font-family:monospace; resize:vertical">' + escapeHtml(copyText.replace(/\n$/, "")) + '</textarea>'
+    html += '<button type="button" class="btn btn-primary" style="margin-top:8px" onclick="copyCredentials(this)">'
+    html += '<i class="fa fa-copy"></i> Copy to Clipboard</button>'
+    Swal.fire({
+        title: 'Submitted Data',
+        html: html,
+        width: 600,
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#428bca',
+    })
+}
+
+// copyCredentials copies the submitted data shown in the View Credentials modal
+// to the clipboard, falling back to execCommand for non-secure (HTTP) contexts.
+function copyCredentials(btn) {
+    var area = document.getElementById("credentialsCopyArea")
+    if (!area) {
+        return
+    }
+    area.select()
+    area.setSelectionRange(0, 99999)
+    var copied = false
+    try {
+        copied = document.execCommand("copy")
+    } catch (e) {
+        copied = false
+    }
+    if (!copied && navigator.clipboard) {
+        navigator.clipboard.writeText(area.value).catch(function () {})
+    }
+    if (btn) {
+        var original = btn.innerHTML
+        btn.innerHTML = '<i class="fa fa-check"></i> Copied!'
+        setTimeout(function () {
+            btn.innerHTML = original
+        }, 1500)
+    }
+}
+
 /**
  * Returns an HTML string that displays the OS and browser that clicked the link
  * or submitted credentials.
@@ -401,6 +470,8 @@ function renderTimeline(data) {
                 if (event.message == "Submitted Data") {
                     results += '<div class="timeline-replay-button"><button onclick="replay(' + i + ')" class="btn btn-success">'
                     results += '<i class="fa fa-refresh"></i> Replay Credentials</button></div>'
+                    results += '<div class="timeline-replay-button"><button onclick="viewCredentials(' + i + ')" class="btn btn-primary">'
+                    results += '<i class="fa fa-eye"></i> View Credentials</button></div>'
                     results += '<div class="timeline-event-details"><i class="fa fa-caret-right"></i> View Details</div>'
                 }
                 if (details.payload) {
