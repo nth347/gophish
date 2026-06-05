@@ -118,6 +118,17 @@
                             <input type="text" class="form-control" placeholder="application/json" id="http_content_type" value="application/json" />
                             <label class="control-label" for="http_body">Body <i class="fa fa-question-circle"
                                     data-toggle="tooltip" data-placement="right" title="Request body sent to the API. Placeholders: {{"{{"}}.To{{"}}"}} (first recipient), {{"{{"}}.Recipients{{"}}"}} (all recipients in this request), {{"{{"}}.From{{"}}"}}, {{"{{"}}.FromName{{"}}"}}, {{"{{"}}.Subject{{"}}"}}, {{"{{"}}.HTML{{"}}"}}, {{"{{"}}.Text{{"}}"}}, {{"{{"}}.Attachments{{"}}"}} (each has .Content (base64), .Filename, .Type). Pipe a value through 'json' (e.g. {{"{{"}}.HTML | json{{"}}"}}) to safely JSON-escape it. For multiple recipients use {{"{{"}}.Recipients | json{{"}}"}} with 'Recipients per request' below. See the placeholder text for an example attachments array."></i>:</label>
+                            <div class="input-group" style="margin-bottom: 5px;">
+                                <select class="form-control" id="http_body_sample">
+                                    <option value="">Insert a sample body…</option>
+                                    <option value="basic">Basic (to, from, subject, html, text)</option>
+                                    <option value="attachments">With attachments</option>
+                                    <option value="recipients">Multiple recipients (array)</option>
+                                </select>
+                                <span class="input-group-btn">
+                                    <button type="button" class="btn btn-default" id="insertHttpSample"><i class="fa fa-clipboard"></i> Insert</button>
+                                </span>
+                            </div>
                             <textarea class="form-control" id="http_body" rows="14" placeholder='{
     "to": "{{"{{"}}.To{{"}}"}}",
     "from": "{{"{{"}}.From{{"}}"}}",

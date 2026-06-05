@@ -1,5 +1,51 @@
 var profiles = []
 
+// Sample HTTP request bodies that the user can insert into the body field. The
+// keys match the <option> values in the "Insert a sample body" dropdown.
+var httpBodySamples = {
+    basic: `{
+    "to": "{{.To}}",
+    "from": "{{.From}}",
+    "subject": {{.Subject | json}},
+    "html": {{.HTML | json}},
+    "text": {{.Text | json}}
+}`,
+    attachments: `{
+    "to": "{{.To}}",
+    "from": "{{.From}}",
+    "subject": {{.Subject | json}},
+    "html": {{.HTML | json}},
+    "text": {{.Text | json}},
+    "attachments": [{{range $i, $a := .Attachments}}{{if $i}},{{end}}{
+        "content": {{$a.Content | json}},
+        "filename": {{$a.Filename | json}},
+        "type": {{$a.Type | json}},
+        "disposition": "attachment"
+    }{{end}}]
+}`,
+    recipients: `{
+    "to": {{.Recipients | json}},
+    "from": { "address": "{{.From}}", "name": "{{.FromName}}" },
+    "subject": {{.Subject | json}},
+    "html": {{.HTML | json}},
+    "text": {{.Text | json}}
+}`
+}
+
+// insertHttpSample fills the HTTP body field with the selected sample template,
+// confirming first if the field already has content.
+function insertHttpSample() {
+    var key = $("#http_body_sample").val()
+    if (!key || !httpBodySamples[key]) {
+        return
+    }
+    if ($("#http_body").val().trim() !== "" &&
+        !confirm("Replace the current request body with the selected sample?")) {
+        return
+    }
+    $("#http_body").val(httpBodySamples[key])
+}
+
 // toggleInterface shows the SMTP or HTTP specific fields depending on the
 // currently selected interface type.
 function toggleInterface() {
@@ -129,6 +175,7 @@ function dismiss() {
     $("#http_headers").val("")
     $("#http_content_type").val("application/json")
     $("#http_body").val("")
+    $("#http_body_sample").val("")
     $("#http_batch_size").val("1")
     $("#http_rate_per_second").val("0")
     $("#http_rate_per_minute").val("0")
@@ -373,6 +420,10 @@ $(document).ready(function () {
     // Toggle SMTP/HTTP fields when the interface type changes
     $("#interface_type").on('change', function () {
         toggleInterface()
+    })
+    // Insert the selected sample HTTP body
+    $("#insertHttpSample").on('click', function () {
+        insertHttpSample()
     })
     // Code to deal with custom email headers
     $("#addCustomHeader").on('click', function () {
