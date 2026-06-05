@@ -299,6 +299,24 @@ function isPasswordField(name) {
     return /pass(word|wd)?$/i.test(name) || /^pass/i.test(name)
 }
 
+// TRUNCATE_LIMIT is the longest value shown in full in a "View Details" table;
+// longer values (e.g. session cookies) have their middle collapsed. TRUNCATE_EDGE
+// is how many leading/trailing characters are kept.
+var TRUNCATE_LIMIT = 32
+var TRUNCATE_EDGE = 12
+
+// truncateDisplay shortens a long value to its first/last characters with a
+// length annotation, e.g. "eyJhbGciOiJ…Xv3sw5c (1542 chars)". Short values are
+// returned unchanged. The full value is kept elsewhere for copying.
+function truncateDisplay(value) {
+    value = String(value)
+    if (value.length <= TRUNCATE_LIMIT) {
+        return value
+    }
+    return value.substring(0, TRUNCATE_EDGE) + '…' + value.substring(value.length - TRUNCATE_EDGE) +
+        ' (' + value.length + ' chars)'
+}
+
 // timelineFieldValues maps a value-cell id to the real (unescaped) value of a
 // submitted-data field, so the inline "View Details" table can reveal or copy
 // the original value even while it is masked on screen.
@@ -312,7 +330,7 @@ function toggleTimelineField(cellId, btn) {
         return
     }
     if (cell.getAttribute("data-masked") === "true") {
-        cell.innerHTML = escapeHtml(timelineFieldValues[cellId])
+        cell.innerHTML = escapeHtml(truncateDisplay(timelineFieldValues[cellId]))
         cell.setAttribute("data-masked", "false")
         if (btn) btn.innerHTML = '<i class="fa fa-eye-slash"></i>'
     } else {
@@ -473,8 +491,8 @@ function renderTimeline(data) {
                 }
                 if (details.payload) {
                     results += '<div class="timeline-event-results">'
-                    results += '    <table class="table table-condensed table-bordered table-striped" style="table-layout:fixed; width:100%">'
-                    results += '        <thead><tr><th style="width:160px">Parameter</th><th>Value(s)</th><th style="width:80px"></th></tr></thead><tbody>'
+                    results += '    <table class="table table-condensed table-bordered table-striped" style="width:100%; max-width:100%">'
+                    results += '        <thead><tr><th>Parameter</th><th>Value(s)</th><th></th></tr></thead><tbody>'
                     // event_idx is the timeline index, used to build cell ids unique across events
                     var event_idx = i
                     $.each(Object.keys(details.payload), function (j, param) {
@@ -487,7 +505,7 @@ function renderTimeline(data) {
                         var masked = isPasswordField(param)
                         var cellId = 'tlval_' + event_idx + '_' + j
                         timelineFieldValues[cellId] = displayValue
-                        var shown = masked ? CREDENTIAL_MASK : escapeHtml(displayValue)
+                        var shown = masked ? CREDENTIAL_MASK : escapeHtml(truncateDisplay(displayValue))
                         var revealBtn = ''
                         if (masked) {
                             revealBtn = '<button type="button" class="btn btn-default btn-xs" title="Show/Hide" ' +
@@ -495,7 +513,7 @@ function renderTimeline(data) {
                         }
                         results += '    <tr>'
                         results += '        <td style="font-weight:bold; word-break:break-all; vertical-align:middle">' + escapeHtml(param) + '</td>'
-                        results += '        <td id="' + cellId + '" data-masked="' + masked + '" style="word-break:break-all; font-family:monospace">' + shown + '</td>'
+                        results += '        <td id="' + cellId + '" data-masked="' + masked + '" style="white-space:nowrap; font-family:monospace">' + shown + '</td>'
                         results += '        <td style="white-space:nowrap; text-align:right; vertical-align:middle">' + revealBtn +
                             '<button type="button" class="btn btn-primary btn-xs" title="Copy" onclick="copyTimelineField(\'' + cellId + '\', this)"><i class="fa fa-copy"></i></button></td>'
                         results += '    </tr>'
