@@ -82,6 +82,20 @@
                     <div class="form-group">
                         <input type="text" class="form-control" placeholder="-1001234567890" id="telegram_chat_id" />
                     </div>
+
+                    <label class="control-label">Include in Submitted Data messages <i class="fa fa-question-circle"
+                            data-toggle="tooltip" data-placement="right"
+                            title="When a target submits data, optionally include the captured credentials in the Telegram message."></i>:</label>
+                    <div class="form-group">
+                        <div class="checkbox checkbox-primary" style="margin:0">
+                            <input type="checkbox" id="telegram_include_username" value="true" />
+                            <label for="telegram_include_username">Include username</label>
+                        </div>
+                        <div class="checkbox checkbox-primary" style="margin:0">
+                            <input type="checkbox" id="telegram_include_password" value="true" />
+                            <label for="telegram_include_password">Include password</label>
+                        </div>
+                    </div>
                 </div>
 
                 <label class="control-label">Notify on events <i class="fa fa-question-circle"

@@ -1,6 +1,65 @@
 package models
 
-import "testing"
+import (
+	"encoding/json"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+)
+
+// TestTelegramSubmittedCredentials verifies the username/password inclusion
+// toggles and that the time field renders in the host's local timezone.
+func TestTelegramSubmittedCredentials(t *testing.T) {
+	det, _ := json.Marshal(EventDetails{
+		Payload: url.Values{
+			"email":    {"victim@corp.com"},
+			"password": {"P@ssw0rd!"},
+			"rid":      {"AbC1234"},
+		},
+	})
+	e := &Event{
+		Message:    EventDataSubmit,
+		Email:      "victim@corp.com",
+		CampaignId: 1,
+		Time:       time.Now().UTC(),
+		Details:    string(det),
+	}
+
+	// Default: neither credential included.
+	msg := (&Webhook{}).formatTelegramMessage(e)
+	if strings.Contains(msg, "Username:") || strings.Contains(msg, "Password:") {
+		t.Errorf("default message should not include credentials, got:\n%s", msg)
+	}
+
+	// Username only.
+	msg = (&Webhook{TelegramIncludeUsername: true}).formatTelegramMessage(e)
+	if !strings.Contains(msg, "Username: victim@corp.com") {
+		t.Errorf("expected username line, got:\n%s", msg)
+	}
+	if strings.Contains(msg, "Password:") {
+		t.Errorf("did not expect password line, got:\n%s", msg)
+	}
+
+	// Both.
+	msg = (&Webhook{TelegramIncludeUsername: true, TelegramIncludePassword: true}).formatTelegramMessage(e)
+	if !strings.Contains(msg, "Username: victim@corp.com") || !strings.Contains(msg, "Password: P@ssw0rd!") {
+		t.Errorf("expected username and password lines, got:\n%s", msg)
+	}
+
+	// Time should be rendered in local time, matching the event's local zone.
+	wantZone := e.Time.Local().Format("MST")
+	if !strings.Contains(msg, "Time: "+e.Time.Local().Format("2006-01-02 15:04:05 MST")) {
+		t.Errorf("expected local time (%s) in message, got:\n%s", wantZone, msg)
+	}
+
+	// Credentials are only included for Submitted Data events.
+	clicked := &Event{Message: EventClicked, Email: "victim@corp.com", CampaignId: 1, Time: time.Now().UTC(), Details: string(det)}
+	msg = (&Webhook{TelegramIncludeUsername: true, TelegramIncludePassword: true}).formatTelegramMessage(clicked)
+	if strings.Contains(msg, "Username:") || strings.Contains(msg, "Password:") {
+		t.Errorf("non-submit events should not include credentials, got:\n%s", msg)
+	}
+}
 
 // TestWebhookHandlesEvent verifies the per-event filtering logic for webhooks.
 func TestWebhookHandlesEvent(t *testing.T) {

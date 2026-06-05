@@ -37,6 +37,8 @@ const dismiss = () => {
     $("#secret").val("");
     $("#telegram_bot_token").val("");
     $("#telegram_chat_id").val("");
+    $("#telegram_include_username").prop("checked", false);
+    $("#telegram_include_password").prop("checked", false);
     // Default new webhooks to notifying only on Submitted Data
     setSelectedEvents("submitted");
     $("#is_active").prop("checked", false);
@@ -52,6 +54,8 @@ const saveWebhook = (id) => {
         secret: $("#secret").val(),
         telegram_bot_token: $("#telegram_bot_token").val(),
         telegram_chat_id: $("#telegram_chat_id").val(),
+        telegram_include_username: $("#telegram_include_username").is(":checked"),
+        telegram_include_password: $("#telegram_include_password").is(":checked"),
         events: getSelectedEvents(),
         is_active: $("#is_active").is(":checked"),
     };
@@ -137,6 +141,8 @@ const editWebhook = (id) => {
               $("#secret").val(wh.secret);
               $("#telegram_bot_token").val(wh.telegram_bot_token);
               $("#telegram_chat_id").val(wh.telegram_chat_id);
+              $("#telegram_include_username").prop("checked", wh.telegram_include_username);
+              $("#telegram_include_password").prop("checked", wh.telegram_include_password);
               setSelectedEvents(wh.events);
               $("#is_active").prop("checked", wh.is_active);
               toggleWebhookType();
