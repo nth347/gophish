@@ -291,8 +291,21 @@ function replay(event_idx) {
     }
 }
 
+// CREDENTIAL_MASK is the placeholder shown in place of masked (password) values.
+var CREDENTIAL_MASK = "********"
+
+// currentCredentials holds the fields shown in the open View Credentials modal,
+// so the per-field copy/reveal buttons can reference their real values.
+var currentCredentials = []
+
+// isPasswordField returns true for payload keys that should be masked by default.
+function isPasswordField(name) {
+    return /pass(word|wd)?$/i.test(name) || /^pass/i.test(name)
+}
+
 // viewCredentials displays the data submitted for a "Submitted Data" event in a
-// modal, and lets the user copy it to the clipboard.
+// modal. Each field has its own Copy button so the username, password and
+// tokens can be copied separately, and password fields are masked by default.
 function viewCredentials(event_idx) {
     var request = campaign.timeline[event_idx]
     var details = JSON.parse(request.details)
@@ -300,8 +313,7 @@ function viewCredentials(event_idx) {
         Swal.fire("No Data", "No submitted data was captured for this event.", "info")
         return
     }
-    var rows = ""
-    var copyText = ""
+    currentCredentials = []
     $.each(Object.keys(details.payload), function (i, param) {
         // Skip internal parameters that aren't submitted credentials
         if (param == "rid" || param == "__original_url") {
@@ -310,53 +322,102 @@ function viewCredentials(event_idx) {
         var value = details.payload[param]
         // Submitted values are arrays (Go url.Values); join them for display
         var displayValue = $.isArray(value) ? value.join(", ") : value
-        rows += '<tr><td style="font-weight:bold; text-align:left">' + escapeHtml(param) + '</td>'
-        rows += '<td style="text-align:left; word-break:break-all">' + escapeHtml(displayValue) + '</td></tr>'
-        copyText += param + ": " + displayValue + "\n"
+        currentCredentials.push({
+            name: param,
+            value: displayValue,
+            masked: isPasswordField(param)
+        })
     })
-    if (rows == "") {
+    if (currentCredentials.length == 0) {
         Swal.fire("No Data", "No submitted data was captured for this event.", "info")
         return
     }
-    var html = '<table class="table table-condensed table-bordered" style="margin-bottom:10px">'
-    html += '<thead><tr><th>Parameter</th><th>Value</th></tr></thead><tbody>' + rows + '</tbody></table>'
-    html += '<textarea id="credentialsCopyArea" class="form-control" rows="4" readonly '
-    html += 'style="font-family:monospace; resize:vertical">' + escapeHtml(copyText.replace(/\n$/, "")) + '</textarea>'
-    html += '<button type="button" class="btn btn-primary" style="margin-top:8px" onclick="copyCredentials(this)">'
-    html += '<i class="fa fa-copy"></i> Copy to Clipboard</button>'
+
+    var rows = ""
+    $.each(currentCredentials, function (idx, field) {
+        var shown = field.masked ? CREDENTIAL_MASK : escapeHtml(field.value)
+        var revealBtn = ""
+        if (field.masked) {
+            revealBtn = '<button type="button" class="btn btn-default btn-xs" title="Show/Hide" ' +
+                'onclick="toggleCredentialField(' + idx + ', this)"><i class="fa fa-eye"></i></button> '
+        }
+        rows += '<tr>'
+        rows += '<td style="font-weight:bold; text-align:left; white-space:nowrap">' + escapeHtml(field.name) + '</td>'
+        rows += '<td id="credValue' + idx + '" data-masked="' + field.masked + '" ' +
+            'style="text-align:left; word-break:break-all; font-family:monospace; max-width:380px">' + shown + '</td>'
+        rows += '<td style="text-align:right; white-space:nowrap">' + revealBtn +
+            '<button type="button" class="btn btn-primary btn-xs" onclick="copyCredentialField(' + idx + ', this)">' +
+            '<i class="fa fa-copy"></i> Copy</button></td>'
+        rows += '</tr>'
+    })
+
+    var html = '<table class="table table-condensed table-bordered" style="margin-bottom:0">'
+    html += '<thead><tr><th>Field</th><th>Value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
     Swal.fire({
         title: 'Submitted Data',
         html: html,
-        width: 600,
+        width: 700,
         confirmButtonText: 'Close',
         confirmButtonColor: '#428bca',
     })
 }
 
-// copyCredentials copies the submitted data shown in the View Credentials modal
-// to the clipboard, falling back to execCommand for non-secure (HTTP) contexts.
-function copyCredentials(btn) {
-    var area = document.getElementById("credentialsCopyArea")
-    if (!area) {
+// toggleCredentialField reveals or re-masks a single masked field in the modal.
+function toggleCredentialField(idx, btn) {
+    var field = currentCredentials[idx]
+    var cell = document.getElementById("credValue" + idx)
+    if (!field || !cell) {
         return
     }
-    area.select()
-    area.setSelectionRange(0, 99999)
+    if (cell.getAttribute("data-masked") === "true") {
+        cell.innerHTML = escapeHtml(field.value)
+        cell.setAttribute("data-masked", "false")
+        if (btn) btn.innerHTML = '<i class="fa fa-eye-slash"></i>'
+    } else {
+        cell.innerHTML = CREDENTIAL_MASK
+        cell.setAttribute("data-masked", "true")
+        if (btn) btn.innerHTML = '<i class="fa fa-eye"></i>'
+    }
+}
+
+// copyCredentialField copies a single field's real value to the clipboard,
+// regardless of whether it is currently masked on screen.
+function copyCredentialField(idx, btn) {
+    var field = currentCredentials[idx]
+    if (!field) {
+        return
+    }
+    copyTextToClipboard(field.value)
+    if (btn) {
+        var original = btn.innerHTML
+        btn.innerHTML = '<i class="fa fa-check"></i> Copied'
+        setTimeout(function () {
+            btn.innerHTML = original
+        }, 1500)
+    }
+}
+
+// copyTextToClipboard copies arbitrary text using a temporary textarea, falling
+// back to the async clipboard API. The textarea approach works in non-secure
+// (HTTP) contexts where navigator.clipboard is unavailable.
+function copyTextToClipboard(text) {
+    var ta = document.createElement("textarea")
+    ta.value = text
+    ta.style.position = "fixed"
+    ta.style.top = "-1000px"
+    ta.style.opacity = "0"
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
     var copied = false
     try {
         copied = document.execCommand("copy")
     } catch (e) {
         copied = false
     }
+    document.body.removeChild(ta)
     if (!copied && navigator.clipboard) {
-        navigator.clipboard.writeText(area.value).catch(function () {})
-    }
-    if (btn) {
-        var original = btn.innerHTML
-        btn.innerHTML = '<i class="fa fa-check"></i> Copied!'
-        setTimeout(function () {
-            btn.innerHTML = original
-        }, 1500)
+        navigator.clipboard.writeText(text).catch(function () {})
     }
 }
 
