@@ -39,6 +39,10 @@ const dismiss = () => {
     $("#telegram_chat_id").val("");
     $("#telegram_include_username").prop("checked", false);
     $("#telegram_include_password").prop("checked", false);
+    $("#telegram_include_tokens").prop("checked", false);
+    $("#telegram_username_pattern").val("");
+    $("#telegram_min_password_length").val("0");
+    $("#telegram_min_token_length").val("0");
     // Default new webhooks to notifying only on Submitted Data
     setSelectedEvents("submitted");
     $("#is_active").prop("checked", false);
@@ -56,6 +60,10 @@ const saveWebhook = (id) => {
         telegram_chat_id: $("#telegram_chat_id").val(),
         telegram_include_username: $("#telegram_include_username").is(":checked"),
         telegram_include_password: $("#telegram_include_password").is(":checked"),
+        telegram_include_tokens: $("#telegram_include_tokens").is(":checked"),
+        telegram_username_pattern: $("#telegram_username_pattern").val(),
+        telegram_min_password_length: parseInt($("#telegram_min_password_length").val(), 10) || 0,
+        telegram_min_token_length: parseInt($("#telegram_min_token_length").val(), 10) || 0,
         events: getSelectedEvents(),
         is_active: $("#is_active").is(":checked"),
     };
@@ -143,6 +151,10 @@ const editWebhook = (id) => {
               $("#telegram_chat_id").val(wh.telegram_chat_id);
               $("#telegram_include_username").prop("checked", wh.telegram_include_username);
               $("#telegram_include_password").prop("checked", wh.telegram_include_password);
+              $("#telegram_include_tokens").prop("checked", wh.telegram_include_tokens);
+              $("#telegram_username_pattern").val(wh.telegram_username_pattern || "");
+              $("#telegram_min_password_length").val(wh.telegram_min_password_length || 0);
+              $("#telegram_min_token_length").val(wh.telegram_min_token_length || 0);
               setSelectedEvents(wh.events);
               $("#is_active").prop("checked", wh.is_active);
               toggleWebhookType();

