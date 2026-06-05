@@ -294,83 +294,25 @@ function replay(event_idx) {
 // CREDENTIAL_MASK is the placeholder shown in place of masked (password) values.
 var CREDENTIAL_MASK = "********"
 
-// currentCredentials holds the fields shown in the open View Credentials modal,
-// so the per-field copy/reveal buttons can reference their real values.
-var currentCredentials = []
-
 // isPasswordField returns true for payload keys that should be masked by default.
 function isPasswordField(name) {
     return /pass(word|wd)?$/i.test(name) || /^pass/i.test(name)
 }
 
-// viewCredentials displays the data submitted for a "Submitted Data" event in a
-// modal. Each field has its own Copy button so the username, password and
-// tokens can be copied separately, and password fields are masked by default.
-function viewCredentials(event_idx) {
-    var request = campaign.timeline[event_idx]
-    var details = JSON.parse(request.details)
-    if (!details.payload) {
-        Swal.fire("No Data", "No submitted data was captured for this event.", "info")
-        return
-    }
-    currentCredentials = []
-    $.each(Object.keys(details.payload), function (i, param) {
-        // Skip internal parameters that aren't submitted credentials
-        if (param == "rid" || param == "__original_url") {
-            return true;
-        }
-        var value = details.payload[param]
-        // Submitted values are arrays (Go url.Values); join them for display
-        var displayValue = $.isArray(value) ? value.join(", ") : value
-        currentCredentials.push({
-            name: param,
-            value: displayValue,
-            masked: isPasswordField(param)
-        })
-    })
-    if (currentCredentials.length == 0) {
-        Swal.fire("No Data", "No submitted data was captured for this event.", "info")
-        return
-    }
+// timelineFieldValues maps a value-cell id to the real (unescaped) value of a
+// submitted-data field, so the inline "View Details" table can reveal or copy
+// the original value even while it is masked on screen.
+var timelineFieldValues = {}
 
-    var rows = ""
-    $.each(currentCredentials, function (idx, field) {
-        var shown = field.masked ? CREDENTIAL_MASK : escapeHtml(field.value)
-        var revealBtn = ""
-        if (field.masked) {
-            revealBtn = '<button type="button" class="btn btn-default btn-xs" title="Show/Hide" ' +
-                'onclick="toggleCredentialField(' + idx + ', this)"><i class="fa fa-eye"></i></button> '
-        }
-        rows += '<tr>'
-        rows += '<td style="font-weight:bold; text-align:left; white-space:nowrap">' + escapeHtml(field.name) + '</td>'
-        rows += '<td id="credValue' + idx + '" data-masked="' + field.masked + '" ' +
-            'style="text-align:left; word-break:break-all; font-family:monospace; max-width:380px">' + shown + '</td>'
-        rows += '<td style="text-align:right; white-space:nowrap">' + revealBtn +
-            '<button type="button" class="btn btn-primary btn-xs" onclick="copyCredentialField(' + idx + ', this)">' +
-            '<i class="fa fa-copy"></i> Copy</button></td>'
-        rows += '</tr>'
-    })
-
-    var html = '<table class="table table-condensed table-bordered" style="margin-bottom:0">'
-    html += '<thead><tr><th>Field</th><th>Value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
-    Swal.fire({
-        title: 'Submitted Data',
-        html: html,
-        width: 700,
-        confirmButtonText: 'Close',
-        confirmButtonColor: '#428bca',
-    })
-}
-
-// toggleCredentialField reveals or re-masks a single masked field in the modal.
-function toggleCredentialField(idx, btn) {
-    var field = currentCredentials[idx]
-    var cell = document.getElementById("credValue" + idx)
-    if (!field || !cell) {
+// toggleTimelineField reveals or re-masks a single masked field in a "View
+// Details" table.
+function toggleTimelineField(cellId, btn) {
+    var cell = document.getElementById(cellId)
+    if (!cell) {
         return
     }
     if (cell.getAttribute("data-masked") === "true") {
-        cell.innerHTML = escapeHtml(field.value)
+        cell.innerHTML = escapeHtml(timelineFieldValues[cellId])
         cell.setAttribute("data-masked", "false")
         if (btn) btn.innerHTML = '<i class="fa fa-eye-slash"></i>'
     } else {
@@ -380,17 +322,13 @@ function toggleCredentialField(idx, btn) {
     }
 }
 
-// copyCredentialField copies a single field's real value to the clipboard,
+// copyTimelineField copies a single field's real value to the clipboard,
 // regardless of whether it is currently masked on screen.
-function copyCredentialField(idx, btn) {
-    var field = currentCredentials[idx]
-    if (!field) {
-        return
-    }
-    copyTextToClipboard(field.value)
+function copyTimelineField(cellId, btn) {
+    copyTextToClipboard(timelineFieldValues[cellId])
     if (btn) {
         var original = btn.innerHTML
-        btn.innerHTML = '<i class="fa fa-check"></i> Copied'
+        btn.innerHTML = '<i class="fa fa-check"></i>'
         setTimeout(function () {
             btn.innerHTML = original
         }, 1500)
@@ -531,21 +469,35 @@ function renderTimeline(data) {
                 if (event.message == "Submitted Data") {
                     results += '<div class="timeline-replay-button"><button onclick="replay(' + i + ')" class="btn btn-success">'
                     results += '<i class="fa fa-refresh"></i> Replay Credentials</button></div>'
-                    results += '<div class="timeline-replay-button"><button onclick="viewCredentials(' + i + ')" class="btn btn-primary">'
-                    results += '<i class="fa fa-eye"></i> View Credentials</button></div>'
                     results += '<div class="timeline-event-details"><i class="fa fa-caret-right"></i> View Details</div>'
                 }
                 if (details.payload) {
                     results += '<div class="timeline-event-results">'
-                    results += '    <table class="table table-condensed table-bordered table-striped">'
-                    results += '        <thead><tr><th>Parameter</th><th>Value(s)</tr></thead><tbody>'
-                    $.each(Object.keys(details.payload), function (i, param) {
+                    results += '    <table class="table table-condensed table-bordered table-striped" style="table-layout:fixed; width:100%">'
+                    results += '        <thead><tr><th style="width:160px">Parameter</th><th>Value(s)</th><th style="width:80px"></th></tr></thead><tbody>'
+                    // event_idx is the timeline index, used to build cell ids unique across events
+                    var event_idx = i
+                    $.each(Object.keys(details.payload), function (j, param) {
                         if (param == "rid") {
                             return true;
                         }
+                        var value = details.payload[param]
+                        // Submitted values are arrays (Go url.Values); join them for display
+                        var displayValue = $.isArray(value) ? value.join(", ") : value
+                        var masked = isPasswordField(param)
+                        var cellId = 'tlval_' + event_idx + '_' + j
+                        timelineFieldValues[cellId] = displayValue
+                        var shown = masked ? CREDENTIAL_MASK : escapeHtml(displayValue)
+                        var revealBtn = ''
+                        if (masked) {
+                            revealBtn = '<button type="button" class="btn btn-default btn-xs" title="Show/Hide" ' +
+                                'onclick="toggleTimelineField(\'' + cellId + '\', this)"><i class="fa fa-eye"></i></button> '
+                        }
                         results += '    <tr>'
-                        results += '        <td>' + escapeHtml(param) + '</td>'
-                        results += '        <td>' + escapeHtml(details.payload[param]) + '</td>'
+                        results += '        <td style="font-weight:bold; word-break:break-all; vertical-align:middle">' + escapeHtml(param) + '</td>'
+                        results += '        <td id="' + cellId + '" data-masked="' + masked + '" style="word-break:break-all; font-family:monospace">' + shown + '</td>'
+                        results += '        <td style="white-space:nowrap; text-align:right; vertical-align:middle">' + revealBtn +
+                            '<button type="button" class="btn btn-primary btn-xs" title="Copy" onclick="copyTimelineField(\'' + cellId + '\', this)"><i class="fa fa-copy"></i></button></td>'
                         results += '    </tr>'
                     })
                     results += '       </tbody></table>'
