@@ -139,10 +139,35 @@ func (r *Result) HandleFormSubmit(details EventDetails) error {
 	return db.Save(r).Error
 }
 
-// isDuplicateSubmit returns true when a "Submitted Data" event with an
-// identical payload has already been recorded for the given campaign and
-// email address. Browser metadata (IP, user-agent) is excluded from the
-// comparison so that re-sends from different network paths are still caught.
+// canonicalCookieJSON unmarshals a cookie JSON blob and re-marshals it so
+// that object keys are sorted (Go's json.Marshal sorts map keys), producing a
+// stable canonical form regardless of the original key order.
+// Returns the original string unchanged on any parse error.
+func canonicalCookieJSON(s string) string {
+	var v interface{}
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return s
+	}
+	return string(b)
+}
+
+// isDuplicateSubmit returns true when an equivalent "Submitted Data" event has
+// already been recorded for the given campaign and email address.
+// Three checks are applied in order:
+//
+//   - Exact payload match (full url.Values encoded string).
+//   - Cookie dedup: the "cookies" JSON blob is canonicalised (keys sorted) and
+//     compared as a string, so re-sends that differ only in key order are caught.
+//   - Token dedup: the "token" field value (access_token,
+//     x-ms-refreshtokencredential, etc.) is compared directly by value.
+//
+// Cookies and tokens use separate needle sets so that access_token (which sorts
+// before "cookies" alphabetically) cannot shadow the cookie field.
+// Browser metadata (IP, user-agent) is excluded from all comparisons.
 func isDuplicateSubmit(campaignID int64, email string, payload url.Values) bool {
 	var events []Event
 	err := db.Where("campaign_id = ? AND email = ? AND message = ?",
@@ -151,12 +176,20 @@ func isDuplicateSubmit(campaignID int64, email string, payload url.Values) bool 
 		return false
 	}
 	incoming := payload.Encode()
+	incomingCookie := canonicalCookieJSON(findPayloadValue(payload, []string{"cookie"}))
+	incomingToken := findPayloadValue(payload, []string{"token"})
 	for _, e := range events {
 		var d EventDetails
 		if err := json.Unmarshal([]byte(e.Details), &d); err != nil {
 			continue
 		}
 		if d.Payload.Encode() == incoming {
+			return true
+		}
+		if incomingCookie != "" && canonicalCookieJSON(findPayloadValue(d.Payload, []string{"cookie"})) == incomingCookie {
+			return true
+		}
+		if incomingToken != "" && findPayloadValue(d.Payload, []string{"token"}) == incomingToken {
 			return true
 		}
 	}
