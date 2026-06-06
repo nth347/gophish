@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"net"
+	"net/url"
 	"time"
 
 	log "github.com/gophish/gophish/logger"
@@ -126,6 +127,9 @@ func (r *Result) HandleClickedLink(details EventDetails) error {
 // HandleFormSubmit updates a Result in the case where the recipient submitted
 // credentials to the form on a Landing Page.
 func (r *Result) HandleFormSubmit(details EventDetails) error {
+	if isDuplicateSubmit(r.CampaignId, r.Email, details.Payload) {
+		return nil
+	}
 	event, err := r.createEvent(EventDataSubmit, details)
 	if err != nil {
 		return err
@@ -133,6 +137,30 @@ func (r *Result) HandleFormSubmit(details EventDetails) error {
 	r.Status = EventDataSubmit
 	r.ModifiedDate = event.Time
 	return db.Save(r).Error
+}
+
+// isDuplicateSubmit returns true when a "Submitted Data" event with an
+// identical payload has already been recorded for the given campaign and
+// email address. Browser metadata (IP, user-agent) is excluded from the
+// comparison so that re-sends from different network paths are still caught.
+func isDuplicateSubmit(campaignID int64, email string, payload url.Values) bool {
+	var events []Event
+	err := db.Where("campaign_id = ? AND email = ? AND message = ?",
+		campaignID, email, EventDataSubmit).Find(&events).Error
+	if err != nil {
+		return false
+	}
+	incoming := payload.Encode()
+	for _, e := range events {
+		var d EventDetails
+		if err := json.Unmarshal([]byte(e.Details), &d); err != nil {
+			continue
+		}
+		if d.Payload.Encode() == incoming {
+			return true
+		}
+	}
+	return false
 }
 
 // HandleEmailReport updates a Result in the case where they report a simulated
