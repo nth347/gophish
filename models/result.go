@@ -189,6 +189,13 @@ func isDuplicateSubmit(campaignID int64, email string, payload url.Values) bool 
 		if incomingCookie != "" && canonicalCookieJSON(findPayloadValue(d.Payload, []string{"cookie"})) == incomingCookie {
 			return true
 		}
+		// Workaround: evilginx2 may produce cookie JSON that differs in ways
+		// not caught by key-sorting (e.g. float precision, whitespace). Fall
+		// back to length equality as a best-effort guard until the root cause
+		// is understood.
+		if incomingCookie != "" && len(findPayloadValue(d.Payload, []string{"cookie"})) == len(findPayloadValue(payload, []string{"cookie"})) {
+			return true
+		}
 		if incomingToken != "" && findPayloadValue(d.Payload, []string{"token"}) == incomingToken {
 			return true
 		}
