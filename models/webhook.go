@@ -288,7 +288,7 @@ func (wh *Webhook) formatTelegramMessage(e *Event) string {
 				baseLen := len(strings.Join(lines, "\n"))
 				budget := telegramMaxMessageLen - baseLen - 1 - len(tokenPrefix) - tsLineMax
 				if budget <= 0 {
-					lines = append(lines, "🍪 Tokens captured (too long to display)")
+					lines = append(lines, fmt.Sprintf("🍪 Tokens captured (too long to display, %d chars)", len(tokensValue)))
 				} else if len(tokensValue) > budget {
 					cut := budget - len(truncSuffix)
 					if cut < 0 {
@@ -299,7 +299,7 @@ func (wh *Webhook) formatTelegramMessage(e *Event) string {
 					lines = append(lines, tokenPrefix+tokensValue)
 				}
 			} else {
-				lines = append(lines, "🍪 Tokens captured (not shown)")
+				lines = append(lines, fmt.Sprintf("🍪 Tokens captured (not shown, %d chars)", len(tokensValue)))
 			}
 		}
 	}
