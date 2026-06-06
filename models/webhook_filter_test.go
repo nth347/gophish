@@ -112,6 +112,24 @@ func TestTelegramTokens(t *testing.T) {
 	}
 }
 
+// TestTelegramTokenTruncation verifies that a token blob larger than Telegram's
+// 4096-character message limit is truncated rather than causing a 400 error.
+func TestTelegramTokenTruncation(t *testing.T) {
+	bigToken := strings.Repeat("x", 5000)
+	e := makeSubmitEvent(url.Values{
+		"tokens": {bigToken},
+	})
+
+	wh := &Webhook{TelegramIncludeTokens: true}
+	msg := wh.formatTelegramMessage(e)
+	if len(msg) > telegramMaxMessageLen {
+		t.Errorf("message length %d exceeds Telegram limit %d", len(msg), telegramMaxMessageLen)
+	}
+	if !strings.Contains(msg, "truncated") {
+		t.Errorf("expected truncation note in message, got:\n%s", msg)
+	}
+}
+
 // TestTelegramUsernamePattern verifies the regex pattern filter for usernames.
 func TestTelegramUsernamePattern(t *testing.T) {
 	e := makeSubmitEvent(url.Values{

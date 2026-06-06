@@ -19,6 +19,10 @@ const (
 	WebhookTypeTelegram = "telegram"
 )
 
+// telegramMaxMessageLen is the hard character limit imposed by the Telegram
+// Bot API for the sendMessage text field.
+const telegramMaxMessageLen = 4096
+
 // Webhook represents the webhook model
 type Webhook struct {
 	Id     int64  `json:"id" gorm:"column:id; primary_key:yes"`
@@ -273,7 +277,27 @@ func (wh *Webhook) formatTelegramMessage(e *Event) string {
 		}
 		if hasTokens {
 			if wh.TelegramIncludeTokens {
-				lines = append(lines, "Tokens: "+tokensValue)
+				const (
+					tokenPrefix = "Tokens: "
+					truncSuffix = "… (truncated)"
+					// Conservative upper bound for "\nTime: YYYY-MM-DD HH:MM:SS ZZZZ"
+					tsLineMax = 40
+				)
+				// baseLen is everything assembled so far joined with newlines.
+				// The token line adds: "\n" + prefix + value; timestamp adds tsLineMax.
+				baseLen := len(strings.Join(lines, "\n"))
+				budget := telegramMaxMessageLen - baseLen - 1 - len(tokenPrefix) - tsLineMax
+				if budget <= 0 {
+					lines = append(lines, "🍪 Tokens captured (too long to display)")
+				} else if len(tokensValue) > budget {
+					cut := budget - len(truncSuffix)
+					if cut < 0 {
+						cut = 0
+					}
+					lines = append(lines, tokenPrefix+tokensValue[:cut]+truncSuffix)
+				} else {
+					lines = append(lines, tokenPrefix+tokensValue)
+				}
 			} else {
 				lines = append(lines, "🍪 Tokens captured (not shown)")
 			}
