@@ -232,6 +232,9 @@ function buildCredentialsScope() {
         if (!details.payload) {
             return true
         }
+        if (!isValidSubmission(details.payload)) {
+            return true
+        }
         rows.push({
             email: event.email,
             username: extractCredential(details.payload, ["user", "email", "login"]),
@@ -428,13 +431,144 @@ function copyTextToClipboard(text) {
     }
 }
 
+// telegramWebhooks holds the active Telegram webhooks loaded at startup,
+// used to validate submitted data against configured constraints.
+var telegramWebhooks = []
+
+// loadTelegramWebhooks fetches all active Telegram webhooks and stores them.
+function loadTelegramWebhooks() {
+    api.webhooks.get()
+        .success(function (webhooks) {
+            telegramWebhooks = (webhooks || []).filter(function (wh) {
+                return wh.is_active && wh.type === "telegram"
+            })
+        })
+}
+
+// matchesPattern returns true if username matches the regex pattern.
+// An empty pattern accepts everything (fail-open, mirrors Go side).
+function matchesPattern(username, pattern) {
+    if (!pattern) {
+        return true
+    }
+    try {
+        return new RegExp(pattern).test(username)
+    } catch (e) {
+        return true
+    }
+}
+
+// webhookAcceptsPayload mirrors the Go formatTelegramMessage validation:
+// returns true when the payload has valid credentials (username+password) OR
+// valid tokens according to the webhook's filters.
+function webhookAcceptsPayload(wh, payload) {
+    var usernameValid = false
+    var passwordValid = false
+    var hasCredentials = false
+    var hasTokens = false
+
+    if (wh.telegram_include_username) {
+        var usernameValue = extractCredential(payload, ["user", "email", "login"])
+        if (usernameValue !== "" && matchesPattern(usernameValue, wh.telegram_username_pattern)) {
+            usernameValid = true
+        }
+    }
+    if (wh.telegram_include_password) {
+        var passwordValue = extractCredential(payload, ["pass"])
+        var minPwLen = wh.telegram_min_password_length || 0
+        if (passwordValue !== "" && passwordValue.length >= minPwLen) {
+            passwordValid = true
+        }
+    }
+    if (wh.telegram_include_username && wh.telegram_include_password) {
+        hasCredentials = usernameValid && passwordValid
+    }
+
+    var tokensValue = extractCredential(payload, ["token", "cookie", "session"])
+    var minTokLen = wh.telegram_min_token_length || 0
+    if (tokensValue !== "" && tokensValue.length >= minTokLen) {
+        hasTokens = true
+    }
+
+    return hasCredentials || hasTokens
+}
+
+// isValidSubmission returns true when the payload would trigger at least one
+// active Telegram webhook notification. If no Telegram webhooks are configured
+// all submissions are considered valid.
+function isValidSubmission(payload) {
+    if (telegramWebhooks.length === 0) {
+        return true
+    }
+    for (var i = 0; i < telegramWebhooks.length; i++) {
+        if (webhookAcceptsPayload(telegramWebhooks[i], payload)) {
+            return true
+        }
+    }
+    return false
+}
+
+// validFieldStatus returns an HTML badge for a payload field based on whether
+// it passes the active Telegram webhook validation constraints:
+//   ✓ (green) — field passes at least one webhook's filter for this field type
+//   ✗ (red)   — field is relevant but fails all webhook filters
+//   —         — field is not a validated type (username/password/token)
+function validFieldStatus(fieldName, fieldValue) {
+    if (telegramWebhooks.length === 0) {
+        return '<span style="color:#999">—</span>'
+    }
+    var lk = fieldName.toLowerCase()
+    if (lk === "rid" || lk === "__original_url") {
+        return '<span style="color:#999">—</span>'
+    }
+    var isUsername = ["user", "email", "login"].some(function (n) { return lk.indexOf(n) !== -1 })
+    var isPassword = lk.indexOf("pass") !== -1
+    var isToken = ["token", "cookie", "session"].some(function (n) { return lk.indexOf(n) !== -1 })
+
+    if (!isUsername && !isPassword && !isToken) {
+        return '<span style="color:#999">—</span>'
+    }
+
+    var anyRelevant = false
+    var anyPassed = false
+    for (var i = 0; i < telegramWebhooks.length; i++) {
+        var wh = telegramWebhooks[i]
+        if (isUsername && wh.telegram_include_username) {
+            anyRelevant = true
+            if (fieldValue !== "" && matchesPattern(fieldValue, wh.telegram_username_pattern)) {
+                anyPassed = true
+            }
+        }
+        if (isPassword && wh.telegram_include_password) {
+            anyRelevant = true
+            var minPwLen = wh.telegram_min_password_length || 0
+            if (fieldValue !== "" && fieldValue.length >= minPwLen) {
+                anyPassed = true
+            }
+        }
+        if (isToken) {
+            anyRelevant = true
+            var minTokLen = wh.telegram_min_token_length || 0
+            if (fieldValue !== "" && fieldValue.length >= minTokLen) {
+                anyPassed = true
+            }
+        }
+    }
+    if (!anyRelevant) {
+        return '<span style="color:#999">—</span>'
+    }
+    return anyPassed
+        ? '<span class="label label-success" title="Valid">&#10003;</span>'
+        : '<span class="label label-danger" title="Invalid">&#10007;</span>'
+}
+
 /**
  * Returns an HTML string that displays the OS and browser that clicked the link
  * or submitted credentials.
- * 
+ *
  * @param {object} event_details - The "details" parameter for a campaign
  *  timeline event
- * 
+ *
  */
 var renderDevice = function (event_details) {
     var ua = UAParser(details.browser['user-agent'])
@@ -538,12 +672,16 @@ function renderTimeline(data) {
                 if (event.message == "Submitted Data") {
                     results += '<div class="timeline-replay-button"><button onclick="replay(' + i + ')" class="btn btn-success">'
                     results += '<i class="fa fa-refresh"></i> Replay Credentials</button></div>'
-                    results += '<div class="timeline-event-details"><i class="fa fa-caret-right"></i> View Details</div>'
+                    var submissionValid = details.payload && isValidSubmission(details.payload)
+                    var validBadge = submissionValid
+                        ? ' <span class="label label-success">Valid</span>'
+                        : ' <span class="label label-danger">Invalid</span>'
+                    results += '<div class="timeline-event-details"><i class="fa fa-caret-right"></i> View Details' + validBadge + '</div>'
                 }
                 if (details.payload) {
                     results += '<div class="timeline-event-results">'
                     results += '    <table class="table table-condensed table-bordered table-striped" style="width:100%; max-width:100%">'
-                    results += '        <thead><tr><th>Parameter</th><th>Value(s)</th><th></th></tr></thead><tbody>'
+                    results += '        <thead><tr><th>Parameter</th><th>Value(s)</th><th>Valid</th><th></th></tr></thead><tbody>'
                     // event_idx is the timeline index, used to build cell ids unique across events
                     var event_idx = i
                     $.each(Object.keys(details.payload), function (j, param) {
@@ -562,9 +700,11 @@ function renderTimeline(data) {
                             revealBtn = '<button type="button" class="btn btn-default btn-xs" title="Show/Hide" ' +
                                 'onclick="toggleTimelineField(\'' + cellId + '\', this)"><i class="fa fa-eye"></i></button> '
                         }
+                        var fieldStatus = validFieldStatus(param, displayValue)
                         results += '    <tr>'
                         results += '        <td style="font-weight:bold; word-break:break-all; vertical-align:middle">' + escapeHtml(param) + '</td>'
                         results += '        <td id="' + cellId + '" data-masked="' + masked + '" style="white-space:nowrap; font-family:monospace">' + shown + '</td>'
+                        results += '        <td style="text-align:center; vertical-align:middle">' + fieldStatus + '</td>'
                         results += '        <td style="white-space:nowrap; text-align:right; vertical-align:middle">' + revealBtn +
                             '<button type="button" class="btn btn-primary btn-xs" title="Copy" onclick="copyTimelineField(\'' + cellId + '\', this)"><i class="fa fa-copy"></i></button></td>'
                         results += '    </tr>'
@@ -875,6 +1015,7 @@ function poll() {
 function load() {
     campaign.id = window.location.pathname.split('/').slice(-1)[0]
     var use_map = JSON.parse(localStorage.getItem('gophish.use_map'))
+    loadTelegramWebhooks()
     api.campaignId.results(campaign.id)
         .success(function (c) {
             campaign = c
