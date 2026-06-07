@@ -25,12 +25,13 @@ type Campaign struct {
 	Page          Page      `json:"page"`
 	Status        string    `json:"status"`
 	Results       []Result  `json:"results,omitempty"`
-	Groups        []Group   `json:"groups,omitempty"`
+	Groups        []Group   `json:"groups,omitempty" gorm:"many2many:campaign_groups;"`
 	Events        []Event   `json:"timeline,omitempty"`
 	SMTPId        int64     `json:"-"`
 	SMTP          SMTP      `json:"smtp"`
 	URL           string    `json:"url"`
 	EncryptionKey string    `json:"encryption_key"`
+	WebhookId     int64     `json:"webhook_id"`
 }
 
 // CampaignResults is a struct representing the results from a campaign
@@ -95,6 +96,9 @@ type EventError struct {
 	Error string `json:"error"`
 }
 
+// ErrNotDraft is returned when trying to launch a campaign that is not in Draft status
+var ErrNotDraft = errors.New("Only Todo campaigns can be launched")
+
 // ErrCampaignNameNotSpecified indicates there was no template given by the user
 var ErrCampaignNameNotSpecified = errors.New("Campaign name not specified")
 
@@ -157,21 +161,30 @@ func AddEvent(e *Event, campaignID int64) error {
 	e.CampaignId = campaignID
 	e.Time = time.Now().UTC()
 
-	whs, err := GetActiveWebhooks()
-	if err == nil {
-		for i := range whs {
-			wh := whs[i]
-			// Only notify webhooks configured to receive this event type.
-			if !wh.HandlesEvent(e.Message) {
-				continue
-			}
-			// Send a copy so the dispatch goroutine doesn't race with the
-			// db.Save below, which sets the event's ID.
-			ev := *e
-			go wh.Notify(&ev)
+	// If the campaign has a specific webhook configured, only notify that one.
+	// Otherwise fall back to all active global webhooks.
+	var whs []Webhook
+	var c Campaign
+	if err := db.Select("webhook_id").Where("id = ?", campaignID).First(&c).Error; err == nil && c.WebhookId != 0 {
+		wh, err := GetWebhook(c.WebhookId)
+		if err == nil && wh.IsActive {
+			whs = []Webhook{wh}
 		}
 	} else {
-		log.Errorf("error getting active webhooks: %v", err)
+		var err error
+		whs, err = GetActiveWebhooks()
+		if err != nil {
+			log.Errorf("error getting active webhooks: %v", err)
+		}
+	}
+
+	for i := range whs {
+		wh := whs[i]
+		if !wh.HandlesEvent(e.Message) {
+			continue
+		}
+		ev := *e
+		go wh.Notify(&ev)
 	}
 
 	return db.Save(e).Error
@@ -298,7 +311,7 @@ func getCampaignStats(cid int64) (CampaignStats, error) {
 	return s, err
 }
 
-// GetCampaigns returns the campaigns owned by the given user.
+// GetCampaigns returns all campaigns owned by the given user.
 func GetCampaigns(uid int64) ([]Campaign, error) {
 	cs := []Campaign{}
 	err := db.Model(&User{Id: uid}).Related(&cs).Error
@@ -394,7 +407,7 @@ func GetCampaignMailContext(id int64, uid int64) (Campaign, error) {
 // GetCampaign returns the campaign, if it exists, specified by the given id and user_id.
 func GetCampaign(id int64, uid int64) (Campaign, error) {
 	c := Campaign{}
-	err := db.Where("id = ?", id).Where("user_id = ?", uid).Find(&c).Error
+	err := db.Preload("Groups").Where("id = ?", id).Where("user_id = ?", uid).Find(&c).Error
 	if err != nil {
 		log.Errorf("%s: campaign not found", err)
 		return c, err
@@ -446,6 +459,7 @@ func GetQueuedCampaigns(t time.Time) ([]Campaign, error) {
 }
 
 // PostCampaign inserts a campaign and all associated records into the database.
+// If c.Status is CampaignTodo the campaign is saved without creating maillogs.
 func PostCampaign(c *Campaign, uid int64) error {
 	err := c.Validate()
 	if err != nil {
@@ -455,17 +469,19 @@ func PostCampaign(c *Campaign, uid int64) error {
 	c.UserId = uid
 	c.CreatedDate = time.Now().UTC()
 	c.CompletedDate = time.Time{}
-	c.Status = CampaignQueued
-	if c.LaunchDate.IsZero() {
-		c.LaunchDate = c.CreatedDate
-	} else {
-		c.LaunchDate = c.LaunchDate.UTC()
-	}
-	if !c.SendByDate.IsZero() {
-		c.SendByDate = c.SendByDate.UTC()
-	}
-	if c.LaunchDate.Before(c.CreatedDate) || c.LaunchDate.Equal(c.CreatedDate) {
-		c.Status = CampaignInProgress
+	if c.Status != CampaignTodo {
+		c.Status = CampaignQueued
+		if c.LaunchDate.IsZero() {
+			c.LaunchDate = c.CreatedDate
+		} else {
+			c.LaunchDate = c.LaunchDate.UTC()
+		}
+		if !c.SendByDate.IsZero() {
+			c.SendByDate = c.SendByDate.UTC()
+		}
+		if c.LaunchDate.Before(c.CreatedDate) || c.LaunchDate.Equal(c.CreatedDate) {
+			c.Status = CampaignInProgress
+		}
 	}
 	// Check to make sure all the groups already exist
 	// Also, later we'll need to know the total number of recipients (counting
@@ -519,6 +535,10 @@ func PostCampaign(c *Campaign, uid int64) error {
 	err = AddEvent(&Event{Message: "Campaign Created"}, c.Id)
 	if err != nil {
 		log.Error(err)
+	}
+	// Todo campaigns are saved without maillogs — they are launched on demand.
+	if c.Status == CampaignTodo {
+		return nil
 	}
 	// Insert all the results
 	resultMap := make(map[string]bool)
@@ -593,6 +613,84 @@ func PostCampaign(c *Campaign, uid int64) error {
 	return tx.Commit().Error
 }
 
+// PutCampaign updates an existing campaign's editable fields without changing its lifecycle status.
+func PutCampaign(c *Campaign, uid int64) error {
+	existing, err := GetCampaign(c.Id, uid)
+	if err != nil {
+		return err
+	}
+	if c.Name == "" {
+		return ErrCampaignNameNotSpecified
+	}
+	if len(c.Groups) == 0 {
+		return ErrGroupNotSpecified
+	}
+	if c.Template.Name == "" {
+		return ErrTemplateNotSpecified
+	}
+	if c.SMTP.Name == "" {
+		return ErrSMTPNotSpecified
+	}
+	for i, g := range c.Groups {
+		c.Groups[i], err = GetGroupByName(g.Name, uid)
+		if err == gorm.ErrRecordNotFound {
+			return ErrGroupNotFound
+		} else if err != nil {
+			return err
+		}
+	}
+	t, err := GetTemplateByName(c.Template.Name, uid)
+	if err == gorm.ErrRecordNotFound {
+		return ErrTemplateNotFound
+	} else if err != nil {
+		return err
+	}
+	c.Template = t
+	c.TemplateId = t.Id
+	s, err := GetSMTPByName(c.SMTP.Name, uid)
+	if err == gorm.ErrRecordNotFound {
+		return ErrSMTPNotFound
+	} else if err != nil {
+		return err
+	}
+	c.SMTP = s
+	c.SMTPId = s.Id
+	c.UserId = uid
+	c.Status = existing.Status
+	c.CreatedDate = existing.CreatedDate
+	c.CompletedDate = existing.CompletedDate
+	// Dates are locked for active/completed campaigns
+	if existing.Status != CampaignTodo {
+		c.LaunchDate = existing.LaunchDate
+		c.SendByDate = existing.SendByDate
+	} else {
+		if !c.LaunchDate.IsZero() {
+			c.LaunchDate = c.LaunchDate.UTC()
+		}
+		if !c.SendByDate.IsZero() {
+			c.SendByDate = c.SendByDate.UTC()
+		}
+	}
+	assoc := db.Model(&existing).Association("Groups")
+	if assoc.Error != nil {
+		return assoc.Error
+	}
+	assoc.Replace(c.Groups)
+	if assoc.Error != nil {
+		return assoc.Error
+	}
+	return db.Model(&existing).Updates(map[string]interface{}{
+		"name":           c.Name,
+		"url":            c.URL,
+		"encryption_key": c.EncryptionKey,
+		"template_id":    c.TemplateId,
+		"smtp_id":        c.SMTPId,
+		"webhook_id":     c.WebhookId,
+		"launch_date":    c.LaunchDate,
+		"send_by_date":   c.SendByDate,
+	}).Error
+}
+
 // DeleteCampaign deletes the specified campaign
 func DeleteCampaign(id int64) error {
 	log.WithFields(logrus.Fields{
@@ -620,6 +718,104 @@ func DeleteCampaign(id int64) error {
 		log.Error(err)
 	}
 	return err
+}
+
+// LaunchCampaign transitions a Todo campaign to active by creating results and maillogs.
+// It returns the updated campaign so the caller can hand it to the worker.
+func LaunchCampaign(id int64, uid int64) (Campaign, error) {
+	c, err := GetCampaign(id, uid)
+	if err != nil {
+		return c, err
+	}
+	if c.Status != CampaignTodo {
+		return c, ErrNotDraft
+	}
+	if len(c.Groups) == 0 {
+		return c, ErrGroupNotSpecified
+	}
+	for i, g := range c.Groups {
+		c.Groups[i], err = GetGroupByName(g.Name, uid)
+		if err != nil {
+			return c, ErrGroupNotFound
+		}
+	}
+
+	c.LaunchDate = time.Now().UTC()
+	c.Status = CampaignInProgress
+
+	totalRecipients := 0
+	for _, g := range c.Groups {
+		totalRecipients += len(g.Targets)
+	}
+
+	resultMap := make(map[string]bool)
+	recipientIndex := 0
+	tx := db.Begin()
+	for _, g := range c.Groups {
+		for _, t := range g.Targets {
+			if _, ok := resultMap[t.Email]; ok {
+				continue
+			}
+			resultMap[t.Email] = true
+			sendDate := c.generateSendDate(recipientIndex, totalRecipients)
+			r := &Result{
+				BaseRecipient: BaseRecipient{
+					Email:     t.Email,
+					Position:  t.Position,
+					FirstName: t.FirstName,
+					LastName:  t.LastName,
+				},
+				Status:       StatusSending,
+				CampaignId:   c.Id,
+				UserId:       c.UserId,
+				SendDate:     sendDate,
+				Reported:     false,
+				ModifiedDate: c.LaunchDate,
+			}
+			err = r.GenerateId(tx)
+			if err != nil {
+				log.Error(err)
+				tx.Rollback()
+				return c, err
+			}
+			err = tx.Save(r).Error
+			if err != nil {
+				log.WithFields(logrus.Fields{"email": t.Email}).Errorf("error creating result: %v", err)
+				tx.Rollback()
+				return c, err
+			}
+			c.Results = append(c.Results, *r)
+			m := &MailLog{
+				UserId:     c.UserId,
+				CampaignId: c.Id,
+				RId:        r.RId,
+				SendDate:   sendDate,
+				Processing: true,
+			}
+			err = tx.Save(m).Error
+			if err != nil {
+				log.WithFields(logrus.Fields{"email": t.Email}).Errorf("error creating maillog entry: %v", err)
+				tx.Rollback()
+				return c, err
+			}
+			recipientIndex++
+		}
+	}
+	err = tx.Commit().Error
+	if err != nil {
+		return c, err
+	}
+	err = db.Model(&Campaign{}).Where("id=? and user_id=?", id, uid).
+		Select([]string{"launch_date", "status"}).UpdateColumns(&c).Error
+	if err != nil {
+		log.Error(err)
+		return c, err
+	}
+	err = AddEvent(&Event{Message: "Plan Launched"}, c.Id)
+	if err != nil {
+		log.Error(err)
+	}
+	return c, nil
 }
 
 // CompleteCampaign effectively "ends" a campaign.

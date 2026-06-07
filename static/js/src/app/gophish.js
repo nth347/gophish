@@ -104,6 +104,14 @@ var api = {
         complete: function (id) {
             return query("/campaigns/" + id + "/complete", "GET", {}, true)
         },
+        // put() - Updates a campaign at PUT /campaigns/:id
+        put: function (id, data) {
+            return query("/campaigns/" + id, "PUT", data, false)
+        },
+        // launch() - Launches a Todo campaign at POST /campaigns/:id/launch
+        launch: function (id) {
+            return query("/campaigns/" + id + "/launch", "POST", {}, false)
+        },
         // summary() - Queries the API for GET /campaigns/summary
         summary: function (id) {
             return query("/campaigns/" + id + "/summary", "GET", {}, true)

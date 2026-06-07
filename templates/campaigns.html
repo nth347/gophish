@@ -49,12 +49,6 @@
         </div>
         <div role="tabpanel" class="tab-pane" id="archivedCampaigns">
             </br>
-            <div id="emptyMessage" class="row" style="display:none;">
-                </br>
-                <div class="alert alert-info">
-                    No archived campaigns.
-                </div>
-            </div>
             <div class="row">
                 <table id="campaignTableArchive" class="table" style="display:none;">
                     <thead>
@@ -124,10 +118,18 @@
                     </div>
                     <label class="control-label" for="users">Groups:</label>
                     <select class="form-control" id="users" multiple="multiple"></select>
+                    <label class="control-label" for="webhook">Notification Webhook (Optional):
+                        <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" title="Route all notifications for this campaign to a specific webhook. Leave blank to use global active webhooks."></i>
+                    </label>
+                    <select class="form-control" id="webhook">
+                        <option></option>
+                    </select>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-default" data-dismiss="modal" onclick="dismiss()">Close</button>
+                <button type="button" id="saveButton" class="btn btn-success" onclick="savePlan()">
+                    <i class="fa fa-save"></i> Save as Plan</button>
                 <button type="button" id="launchButton" class="btn btn-primary" onclick="launch()">
                     <i class="fa fa-rocket"></i> Launch Campaign</button>
             </div>
