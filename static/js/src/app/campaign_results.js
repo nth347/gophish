@@ -94,6 +94,10 @@ var statuses = {
     "Campaign Created": {
         label: "label-success",
         icon: "fa-rocket"
+    },
+    "Plan Launched": {
+        label: "label-primary",
+        icon: "fa-rocket"
     }
 }
 
