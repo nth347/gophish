@@ -290,7 +290,8 @@ func (wh *Webhook) formatTelegramMessage(e *Event) string {
 			hasTokens = true
 		}
 
-		if !hasCredentials && !hasTokens {
+		filtersConfigured := wh.TelegramIncludeUsername || wh.TelegramIncludePassword || wh.TelegramIncludeTokens
+		if filtersConfigured && !hasCredentials && !hasTokens {
 			return ""
 		}
 
