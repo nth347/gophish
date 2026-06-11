@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	log "github.com/gophish/gophish/logger"
 	"github.com/gophish/gophish/models"
@@ -79,6 +80,48 @@ func (as *Server) Webhook(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// TestWebhookRequest sends a test HTTP API request using the webhook config
+// supplied in the request body, without requiring the webhook to be saved
+// first. Only the http_api type is accepted; use the existing validate endpoint
+// for standard/telegram webhooks.
+func (as *Server) TestWebhookRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		return
+	}
+	wh := models.Webhook{}
+	if err := json.NewDecoder(r.Body).Decode(&wh); err != nil {
+		JSONResponse(w, models.Response{Success: false, Message: "Invalid JSON"}, http.StatusBadRequest)
+		return
+	}
+	if wh.URL == "" {
+		JSONResponse(w, models.Response{Success: false, Message: "URL is required"}, http.StatusBadRequest)
+		return
+	}
+	method := wh.APIMethod
+	if method == "" {
+		method = "POST"
+	}
+	var headers map[string]string
+	if wh.APIHeaders != "" {
+		if err := json.Unmarshal([]byte(wh.APIHeaders), &headers); err != nil {
+			JSONResponse(w, models.Response{Success: false, Message: "Invalid api_headers JSON"}, http.StatusBadRequest)
+			return
+		}
+	}
+	testEvent := &models.Event{
+		CampaignId: 0,
+		Email:      "test@example.com",
+		Time:       time.Now().UTC(),
+		Message:    models.EventDataSubmit,
+		Details:    `{"payload":{"username":["test_user"],"password":["test_password"]},"browser":{"address":"127.0.0.1","user-agent":"Gophish Test"}}`,
+	}
+	if err := webhook.SendHTTPAPI(method, wh.URL, headers, testEvent); err != nil {
+		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
+		return
+	}
+	JSONResponse(w, models.Response{Success: true, Message: "Test request sent successfully"}, http.StatusOK)
+}
+
 // ValidateWebhook makes an HTTP request to a specified remote url to ensure that it's valid.
 func (as *Server) ValidateWebhook(w http.ResponseWriter, r *http.Request) {
 	type validationEvent struct {
@@ -96,6 +139,19 @@ func (as *Server) ValidateWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		if wh.Type == models.WebhookTypeTelegram {
 			err = webhook.SendTelegram(wh.TelegramBotToken, wh.TelegramChatID, "🎣 Gophish: webhook test successful.")
+		} else if wh.Type == models.WebhookTypeHTTPAPI {
+			method := wh.APIMethod
+			if method == "" {
+				method = "POST"
+			}
+			payload := validationEvent{Success: true}
+			var headers map[string]string
+			if wh.APIHeaders != "" {
+				if jsonErr := json.Unmarshal([]byte(wh.APIHeaders), &headers); jsonErr != nil {
+					headers = nil
+				}
+			}
+			err = webhook.SendHTTPAPI(method, wh.URL, headers, payload)
 		} else {
 			payload := validationEvent{Success: true}
 			err = webhook.Send(webhook.EndPoint{URL: wh.URL, Secret: wh.Secret}, payload)

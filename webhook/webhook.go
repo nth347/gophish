@@ -15,25 +15,12 @@ import (
 )
 
 const (
-
-	// DefaultTimeoutSeconds is the number of seconds before a timeout occurs
-	// when sending a webhook
-	DefaultTimeoutSeconds = 10
-
-	// MinHTTPStatusErrorCode is the lower bound of HTTP status codes which
-	// indicate an error occurred
+	DefaultTimeoutSeconds  = 10
 	MinHTTPStatusErrorCode = 400
-
-	// SignatureHeader is the name of the HTTP header which contains the
-	// webhook signature
-	SignatureHeader = "X-Gophish-Signature"
-
-	// Sha256Prefix is the prefix that specifies the hashing algorithm used
-	// for the signature
-	Sha256Prefix = "sha256"
+	SignatureHeader        = "X-Gophish-Signature"
+	Sha256Prefix           = "sha256"
 )
 
-// Sender represents a type which can send webhooks to an EndPoint
 type Sender interface {
 	Send(endPoint EndPoint, data interface{}) error
 }
@@ -51,24 +38,19 @@ var senderInstance = &defaultSender{
 	},
 }
 
-// SetTransport sets the underlying transport for the default webhook client.
 func SetTransport(tr *http.Transport) {
 	senderInstance.client.Transport = tr
 }
 
-// EndPoint represents a URL to send the webhook to, as well as a secret used
-// to sign the event
 type EndPoint struct {
 	URL    string
 	Secret string
 }
 
-// Send sends data to a single EndPoint
 func Send(endPoint EndPoint, data interface{}) error {
 	return senderInstance.Send(endPoint, data)
 }
 
-// SendAll sends data to multiple EndPoints
 func SendAll(endPoints []EndPoint, data interface{}) {
 	for _, e := range endPoints {
 		go func(e EndPoint) {
@@ -77,14 +59,18 @@ func SendAll(endPoints []EndPoint, data interface{}) {
 	}
 }
 
-// SendTelegram sends a plain-text message to a Telegram chat using the
-// Telegram Bot API (https://core.telegram.org/bots/api#sendmessage).
 func SendTelegram(botToken, chatID, text string) error {
 	return senderInstance.SendTelegram(botToken, chatID, text)
 }
 
-// SendTelegram contains the implementation of sending a message via the
-// Telegram Bot API.
+func SendHTTPAPI(method, targetURL string, headers map[string]string, data interface{}) error {
+	return senderInstance.SendHTTPAPI(method, targetURL, headers, data)
+}
+
+func SendHTTPAPIRaw(method, targetURL string, headers map[string]string, body []byte) error {
+	return senderInstance.SendHTTPAPIRaw(method, targetURL, headers, body)
+}
+
 func (ds defaultSender) SendTelegram(botToken, chatID, text string) error {
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
 	jsonData, err := json.Marshal(map[string]string{
@@ -115,7 +101,6 @@ func (ds defaultSender) SendTelegram(botToken, chatID, text string) error {
 	return nil
 }
 
-// Send contains the implementation of sending webhook to an EndPoint
 func (ds defaultSender) Send(endPoint EndPoint, data interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -142,6 +127,39 @@ func (ds defaultSender) Send(endPoint EndPoint, data interface{}) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= MinHTTPStatusErrorCode {
+		errMsg := fmt.Sprintf("http status of response: %s", resp.Status)
+		log.Error(errMsg)
+		return errors.New(errMsg)
+	}
+	return nil
+}
+
+func (ds defaultSender) SendHTTPAPI(method, targetURL string, headers map[string]string, data interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	return ds.SendHTTPAPIRaw(method, targetURL, headers, jsonData)
+}
+
+func (ds defaultSender) SendHTTPAPIRaw(method, targetURL string, headers map[string]string, body []byte) error {
+	req, err := http.NewRequest(method, targetURL, bytes.NewBuffer(body))
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := ds.client.Do(req)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	defer resp.Body.Close()
 	if resp.StatusCode >= MinHTTPStatusErrorCode {
 		errMsg := fmt.Sprintf("http status of response: %s", resp.Status)
 		log.Error(errMsg)

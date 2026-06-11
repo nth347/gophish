@@ -49,8 +49,9 @@
                 <label class="control-label" for="type">Type:</label>
                 <div class="form-group">
                     <select class="form-control" id="type">
-                        <option value="standard">Standard (HTTP)</option>
+                        <option value="standard">Standard (HTTP + HMAC)</option>
                         <option value="telegram">Telegram</option>
+                        <option value="http_api">HTTP API</option>
                     </select>
                 </div>
 
@@ -64,6 +65,66 @@
                     <label class="control-label" for="secret">Secret:</label>
                     <div class="form-group">
                         <input type="text" class="form-control" placeholder="Secret" id="secret" />
+                    </div>
+                </div>
+
+                <!-- HTTP API webhook fields -->
+                <div id="api_fields" style="display:none;">
+                    <label class="control-label" for="api_url">URL <i class="fa fa-question-circle"
+                            data-toggle="tooltip" data-placement="right"
+                            title="The API endpoint to POST captured data to. Receives a JSON body with campaign_id, email, event, time, and form_data fields."></i>:</label>
+                    <div class="form-group">
+                        <input type="text" class="form-control" placeholder="https://api.example.com/captures" id="api_url" />
+                    </div>
+
+                    <label class="control-label" for="api_method">HTTP Method:</label>
+                    <div class="form-group">
+                        <select class="form-control" id="api_method">
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="PATCH">PATCH</option>
+                            <option value="GET">GET</option>
+                        </select>
+                    </div>
+
+                    <label class="control-label">Custom Headers <i class="fa fa-question-circle"
+                            data-toggle="tooltip" data-placement="right"
+                            title="Add HTTP headers for authentication or routing, e.g. Authorization: Bearer &lt;token&gt; or X-API-Key: &lt;key&gt;."></i>:</label>
+                    <div id="api_headers_list"></div>
+                    <div class="form-group" style="margin-top:6px;">
+                        <button type="button" class="btn btn-default btn-sm" id="add_api_header">
+                            <i class="fa fa-plus"></i> Add Header
+                        </button>
+                    </div>
+
+                    <label class="control-label">Validation filters <i class="fa fa-question-circle"
+                            data-toggle="tooltip" data-placement="right"
+                            title="For Submitted Data events, only send the request when the captured data satisfies at least one condition: valid credentials (username+password both enabled and valid) OR valid tokens. When no toggles are enabled, all Submitted Data events are forwarded."></i>:</label>
+                    <div class="form-group">
+                        <div class="checkbox checkbox-primary" style="margin:0">
+                            <input type="checkbox" id="api_include_username" value="true" />
+                            <label for="api_include_username">Require username</label>
+                        </div>
+                        <div class="checkbox checkbox-primary" style="margin:0">
+                            <input type="checkbox" id="api_include_password" value="true" />
+                            <label for="api_include_password">Require password</label>
+                        </div>
+                        <div class="checkbox checkbox-primary" style="margin:0">
+                            <input type="checkbox" id="api_include_tokens" value="true" />
+                            <label for="api_include_tokens">Require tokens / cookies</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="api_username_pattern" style="font-weight:normal">Username pattern (regex)</label>
+                        <input type="text" class="form-control" placeholder="e.g. @corp\.com$ (leave empty for all)" id="api_username_pattern" />
+                    </div>
+                    <div class="form-group">
+                        <label for="api_min_password_length" style="font-weight:normal">Min password length</label>
+                        <input type="number" min="0" class="form-control" placeholder="0 = no minimum" id="api_min_password_length" value="0" />
+                    </div>
+                    <div class="form-group">
+                        <label for="api_min_token_length" style="font-weight:normal">Min token/cookie length</label>
+                        <input type="number" min="0" class="form-control" placeholder="0 = no minimum" id="api_min_token_length" value="0" />
                     </div>
                 </div>
 
@@ -156,6 +217,9 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-warning" id="testRequestBtn" style="display:none;">
+                    <i class="fa fa-paper-plane"></i> Test Request
+                </button>
                 <button type="button" class="btn btn-primary" id="modalSubmit">Save changes</button>
             </div>
         </div>

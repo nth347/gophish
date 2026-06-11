@@ -161,30 +161,28 @@ func AddEvent(e *Event, campaignID int64) error {
 	e.CampaignId = campaignID
 	e.Time = time.Now().UTC()
 
-	// If the campaign has a specific webhook configured, only notify that one.
-	// Otherwise fall back to all active global webhooks.
-	var whs []Webhook
-	var c Campaign
-	if err := db.Select("webhook_id").Where("id = ?", campaignID).First(&c).Error; err == nil && c.WebhookId != 0 {
-		wh, err := GetWebhook(c.WebhookId)
-		if err == nil && wh.IsActive {
-			whs = []Webhook{wh}
-		}
-	} else {
-		var err error
-		whs, err = GetActiveWebhooks()
-		if err != nil {
-			log.Errorf("error getting active webhooks: %v", err)
+	shouldNotify := true
+	if e.Message == EventDataSubmit {
+		var prior Event
+		if db.Where("campaign_id = ? AND email = ? AND message = ?",
+			campaignID, e.Email, EventDataSubmit).First(&prior).Error == nil {
+			shouldNotify = false
 		}
 	}
 
-	for i := range whs {
-		wh := whs[i]
-		if !wh.HandlesEvent(e.Message) {
-			continue
+	if shouldNotify {
+		whs, err := GetActiveWebhooks()
+		if err != nil {
+			log.Errorf("error getting active webhooks: %v", err)
 		}
-		ev := *e
-		go wh.Notify(&ev)
+		for i := range whs {
+			wh := whs[i]
+			if !wh.HandlesEvent(e.Message) {
+				continue
+			}
+			ev := *e
+			go wh.Notify(&ev)
+		}
 	}
 
 	return db.Save(e).Error

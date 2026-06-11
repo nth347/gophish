@@ -2,16 +2,14 @@ let webhooks = [];
 
 const WEBHOOK_EVENTS = ["sent", "opened", "clicked", "submitted", "reported"];
 
-// toggleWebhookType shows the Standard or Telegram fields based on the selected
-// webhook type.
+// toggleWebhookType shows the correct fields section for the selected type and
+// shows the Test Request button only for the http_api type.
 const toggleWebhookType = () => {
-    if ($("#type").val() === "telegram") {
-        $("#standard_fields").hide();
-        $("#telegram_fields").show();
-    } else {
-        $("#telegram_fields").hide();
-        $("#standard_fields").show();
-    }
+    const t = $("#type").val();
+    $("#standard_fields").toggle(t === "standard");
+    $("#telegram_fields").toggle(t === "telegram");
+    $("#api_fields").toggle(t === "http_api");
+    $("#testRequestBtn").toggle(t === "http_api");
 };
 
 // getSelectedEvents returns the checked event keys as a comma-separated string.
@@ -43,6 +41,15 @@ const dismiss = () => {
     $("#telegram_username_pattern").val("");
     $("#telegram_min_password_length").val("0");
     $("#telegram_min_token_length").val("0");
+    $("#api_url").val("");
+    $("#api_method").val("POST");
+    $("#api_headers_list").empty();
+    $("#api_include_username").prop("checked", false);
+    $("#api_include_password").prop("checked", false);
+    $("#api_include_tokens").prop("checked", false);
+    $("#api_username_pattern").val("");
+    $("#api_min_password_length").val("0");
+    $("#api_min_token_length").val("0");
     // Default new webhooks to notifying only on Submitted Data
     setSelectedEvents("submitted");
     $("#is_active").prop("checked", false);
@@ -50,11 +57,59 @@ const dismiss = () => {
     $("#flashes").empty();
 };
 
+// addAPIHeaderRow appends a new key/value header row to the headers list.
+// If key/value are provided the inputs are pre-filled (used when loading an
+// existing webhook).
+const addAPIHeaderRow = (key, value) => {
+    const row = $(`
+        <div class="form-group api-header-row" style="display:flex;gap:6px;margin-bottom:4px;">
+            <input type="text" class="form-control api-header-key" placeholder="Header name" style="flex:1" value="${escapeHtml(key || '')}" />
+            <input type="text" class="form-control api-header-value" placeholder="Header value" style="flex:2" value="${escapeHtml(value || '')}" />
+            <button type="button" class="btn btn-danger btn-sm remove-api-header" style="white-space:nowrap;">
+                <i class="fa fa-times"></i>
+            </button>
+        </div>
+    `);
+    row.find(".remove-api-header").on("click", function() {
+        row.remove();
+    });
+    $("#api_headers_list").append(row);
+};
+
+// getAPIHeaders collects all header rows and returns a plain object (or null
+// if there are no rows, so the field is omitted from the request body).
+const getAPIHeaders = () => {
+    const headers = {};
+    let hasAny = false;
+    $("#api_headers_list .api-header-row").each(function() {
+        const k = $(this).find(".api-header-key").val().trim();
+        const v = $(this).find(".api-header-value").val().trim();
+        if (k) {
+            headers[k] = v;
+            hasAny = true;
+        }
+    });
+    return hasAny ? JSON.stringify(headers) : "";
+};
+
+// setAPIHeaders populates the headers list from a JSON string (as stored in
+// the model). Silently ignores invalid JSON.
+const setAPIHeaders = (headersJSON) => {
+    $("#api_headers_list").empty();
+    if (!headersJSON) return;
+    let h = {};
+    try { h = JSON.parse(headersJSON); } catch (e) { return; }
+    Object.keys(h).forEach((k) => addAPIHeaderRow(k, h[k]));
+};
+
 const saveWebhook = (id) => {
+    const whType = $("#type").val();
+    // For HTTP API type, the URL lives in #api_url; for others in #url.
+    const urlValue = whType === "http_api" ? $("#api_url").val() : $("#url").val();
     let wh = {
         name: $("#name").val(),
-        type: $("#type").val(),
-        url: $("#url").val(),
+        type: whType,
+        url: urlValue,
         secret: $("#secret").val(),
         telegram_bot_token: $("#telegram_bot_token").val(),
         telegram_chat_id: $("#telegram_chat_id").val(),
@@ -64,6 +119,14 @@ const saveWebhook = (id) => {
         telegram_username_pattern: $("#telegram_username_pattern").val(),
         telegram_min_password_length: parseInt($("#telegram_min_password_length").val(), 10) || 0,
         telegram_min_token_length: parseInt($("#telegram_min_token_length").val(), 10) || 0,
+        api_method: $("#api_method").val() || "POST",
+        api_headers: getAPIHeaders(),
+        api_include_username: $("#api_include_username").is(":checked"),
+        api_include_password: $("#api_include_password").is(":checked"),
+        api_include_tokens: $("#api_include_tokens").is(":checked"),
+        api_username_pattern: $("#api_username_pattern").val(),
+        api_min_password_length: parseInt($("#api_min_password_length").val(), 10) || 0,
+        api_min_token_length: parseInt($("#api_min_token_length").val(), 10) || 0,
         events: getSelectedEvents(),
         is_active: $("#is_active").is(":checked"),
     };
@@ -143,9 +206,17 @@ const editWebhook = (id) => {
         $("#webhookModalLabel").text("Edit Webhook")
         api.webhookId.get(id)
           .success(function(wh) {
+              const t = wh.type || "standard";
               $("#name").val(wh.name);
-              $("#type").val(wh.type || "standard");
-              $("#url").val(wh.url);
+              $("#type").val(t);
+              // Populate URL into the correct field based on type
+              if (t === "http_api") {
+                  $("#api_url").val(wh.url);
+                  $("#url").val("");
+              } else {
+                  $("#url").val(wh.url);
+                  $("#api_url").val("");
+              }
               $("#secret").val(wh.secret);
               $("#telegram_bot_token").val(wh.telegram_bot_token);
               $("#telegram_chat_id").val(wh.telegram_chat_id);
@@ -155,6 +226,14 @@ const editWebhook = (id) => {
               $("#telegram_username_pattern").val(wh.telegram_username_pattern || "");
               $("#telegram_min_password_length").val(wh.telegram_min_password_length || 0);
               $("#telegram_min_token_length").val(wh.telegram_min_token_length || 0);
+              $("#api_method").val(wh.api_method || "POST");
+              setAPIHeaders(wh.api_headers || "");
+              $("#api_include_username").prop("checked", wh.api_include_username);
+              $("#api_include_password").prop("checked", wh.api_include_password);
+              $("#api_include_tokens").prop("checked", wh.api_include_tokens);
+              $("#api_username_pattern").val(wh.api_username_pattern || "");
+              $("#api_min_password_length").val(wh.api_min_password_length || 0);
+              $("#api_min_token_length").val(wh.api_min_token_length || 0);
               setSelectedEvents(wh.events);
               $("#is_active").prop("checked", wh.is_active);
               toggleWebhookType();
@@ -212,6 +291,37 @@ const deleteWebhook = (id) => {
     })
 };
 
+// testRequest collects the current form values and sends a test event to the
+// configured API endpoint without saving the webhook.
+const testRequest = (btn) => {
+    const config = {
+        type: "http_api",
+        url: $("#api_url").val(),
+        api_method: $("#api_method").val() || "POST",
+        api_headers: getAPIHeaders(),
+        api_include_username: $("#api_include_username").is(":checked"),
+        api_include_password: $("#api_include_password").is(":checked"),
+        api_include_tokens: $("#api_include_tokens").is(":checked"),
+        api_username_pattern: $("#api_username_pattern").val(),
+        api_min_password_length: parseInt($("#api_min_password_length").val(), 10) || 0,
+        api_min_token_length: parseInt($("#api_min_token_length").val(), 10) || 0,
+    };
+    if (!config.url) {
+        modalError("URL is required to send a test request.");
+        return;
+    }
+    btn.disabled = true;
+    api.webhookId.testRequest(config)
+        .success(function() {
+            btn.disabled = false;
+            successFlash("Test request sent successfully.");
+        })
+        .error(function(data) {
+            btn.disabled = false;
+            modalError("Test request failed: " + escapeHtml(data.responseJSON.message));
+        });
+};
+
 const pingUrl = (btn, whId) => {
     dismiss();
     btn.disabled = true;
@@ -240,6 +350,12 @@ $(document).ready(function() {
     });
     $("#type").on("change", function() {
         toggleWebhookType();
+    });
+    $("#add_api_header").on("click", function() {
+        addAPIHeaderRow("", "");
+    });
+    $("#testRequestBtn").on("click", function() {
+        testRequest(this);
     });
     $("#webhookTable").on("click", ".edit_button", function(e) {
         editWebhook($(this).attr("data-webhook-id"));

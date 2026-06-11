@@ -284,6 +284,9 @@ var api = {
         ping: function(id) {
             return query("/webhooks/" + id + "/validate", "POST", {}, true)
         },
+        testRequest: function(webhookConfig) {
+            return query("/webhooks/test_request", "POST", webhookConfig, true)
+        },
     },
     // import handles all of the "import" functions in the api
     import_email: function (req) {
