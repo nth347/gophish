@@ -159,6 +159,17 @@ func (wh *Webhook) apiHeadersMap() map[string]string {
 	return h
 }
 
+func webhookTagLabel(wh Webhook) string {
+	switch wh.Type {
+	case WebhookTypeTelegram:
+		return "Webhook:Telegram"
+	case WebhookTypeHTTPAPI:
+		return "Webhook / HTTP API"
+	default:
+		return "Webhook"
+	}
+}
+
 func (wh *Webhook) HandlesEvent(message string) bool {
 	if strings.TrimSpace(wh.Events) == "" {
 		return true

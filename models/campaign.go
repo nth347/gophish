@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 	"net/url"
 	"time"
@@ -86,8 +87,9 @@ type Event struct {
 // EventDetails is a struct that wraps common attributes we want to store
 // in an event
 type EventDetails struct {
-	Payload url.Values        `json:"payload"`
-	Browser map[string]string `json:"browser"`
+	Payload  url.Values        `json:"payload"`
+	Browser  map[string]string `json:"browser"`
+	Webhooks []string          `json:"webhooks,omitempty"`
 }
 
 // EventError is a struct that wraps an error that occurs when sending an
@@ -175,13 +177,25 @@ func AddEvent(e *Event, campaignID int64) error {
 		if err != nil {
 			log.Errorf("error getting active webhooks: %v", err)
 		}
+		var notified []string
 		for i := range whs {
 			wh := whs[i]
 			if !wh.HandlesEvent(e.Message) {
 				continue
 			}
+			notified = append(notified, webhookTagLabel(wh))
 			ev := *e
 			go wh.Notify(&ev)
+		}
+		if len(notified) > 0 {
+			var d EventDetails
+			if e.Details != "" {
+				_ = json.Unmarshal([]byte(e.Details), &d)
+			}
+			d.Webhooks = notified
+			if b, err := json.Marshal(d); err == nil {
+				e.Details = string(b)
+			}
 		}
 	}
 

@@ -680,7 +680,13 @@ function renderTimeline(data) {
                     var validBadge = submissionValid
                         ? ' <span class="label label-success">Valid</span>'
                         : ' <span class="label label-danger">Invalid</span>'
-                    results += '<div class="timeline-event-details"><i class="fa fa-caret-right"></i> View Details' + validBadge + '</div>'
+                    var webhookTags = ''
+                    if (details.webhooks && details.webhooks.length > 0) {
+                        webhookTags = details.webhooks.map(function(n) {
+                            return ' <span class="label label-info">' + escapeHtml(n) + '</span>'
+                        }).join('')
+                    }
+                    results += '<div class="timeline-event-details"><i class="fa fa-caret-right"></i> View Details' + validBadge + webhookTags + '</div>'
                 }
                 if (details.payload) {
                     results += '<div class="timeline-event-results">'
