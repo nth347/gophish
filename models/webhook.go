@@ -162,7 +162,7 @@ func (wh *Webhook) apiHeadersMap() map[string]string {
 func webhookTagLabel(wh Webhook) string {
 	switch wh.Type {
 	case WebhookTypeTelegram:
-		return "Webhook:Telegram"
+		return "Webhook / Telegram"
 	case WebhookTypeHTTPAPI:
 		return "Webhook / HTTP API"
 	default:
