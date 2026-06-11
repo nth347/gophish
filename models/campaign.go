@@ -165,10 +165,21 @@ func AddEvent(e *Event, campaignID int64) error {
 
 	shouldNotify := true
 	if e.Message == EventDataSubmit {
-		var prior Event
+		// Only suppress if a prior submission already fired webhooks (was valid).
+		// Invalid prior submissions (no webhooks field) do not count.
+		var priors []Event
 		if db.Where("campaign_id = ? AND email = ? AND message = ?",
-			campaignID, e.Email, EventDataSubmit).First(&prior).Error == nil {
-			shouldNotify = false
+			campaignID, e.Email, EventDataSubmit).Find(&priors).Error == nil {
+			for _, prior := range priors {
+				var d EventDetails
+				if prior.Details != "" {
+					_ = json.Unmarshal([]byte(prior.Details), &d)
+				}
+				if len(d.Webhooks) > 0 {
+					shouldNotify = false
+					break
+				}
+			}
 		}
 	}
 
@@ -181,6 +192,9 @@ func AddEvent(e *Event, campaignID int64) error {
 		for i := range whs {
 			wh := whs[i]
 			if !wh.HandlesEvent(e.Message) {
+				continue
+			}
+			if !wh.wouldNotify(e) {
 				continue
 			}
 			notified = append(notified, webhookTagLabel(wh))

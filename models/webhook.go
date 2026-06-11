@@ -159,6 +159,16 @@ func (wh *Webhook) apiHeadersMap() map[string]string {
 	return h
 }
 
+func (wh *Webhook) wouldNotify(e *Event) bool {
+	if wh.Type == WebhookTypeTelegram {
+		return wh.formatTelegramMessage(e) != ""
+	}
+	if wh.Type == WebhookTypeHTTPAPI {
+		return wh.validateHTTPAPIEvent(e)
+	}
+	return true
+}
+
 func webhookTagLabel(wh Webhook) string {
 	switch wh.Type {
 	case WebhookTypeTelegram:
