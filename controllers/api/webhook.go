@@ -108,14 +108,16 @@ func (as *Server) TestWebhookRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	testEvent := &models.Event{
-		CampaignId: 0,
+	testPayload := models.HTTPAPIPayload{
+		CampaignID: 0,
 		Email:      "test@example.com",
-		Time:       time.Now().UTC(),
-		Message:    models.EventDataSubmit,
-		Details:    `{"payload":{"username":["test_user"],"password":["test_password"]},"browser":{"address":"127.0.0.1","user-agent":"Gophish Test"}}`,
+		Time:       time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		Event:      models.EventDataSubmit,
+		Username:   "test_user",
+		Password:   "test_password",
+		Cookies:    json.RawMessage(`[{"name":"session","value":"abc123","domain":".example.com","path":"/","expires":1999999999,"httpOnly":true,"secure":true}]`),
 	}
-	if err := webhook.SendHTTPAPI(method, wh.URL, headers, testEvent); err != nil {
+	if err := webhook.SendHTTPAPI(method, wh.URL, headers, testPayload); err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}

