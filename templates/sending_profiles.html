@@ -227,7 +227,7 @@
                 <div class="row" id="sendTestEmailModal.flashes"></div>
                 <div class="row">
                     <div class="col-sm-12">
-                        <label class="control-label" for="to">Send Test Email to:</label>
+                        <label class="control-label">Send To:</label>
                     </div>
                     <br>
                     <div class="col-sm-2">
@@ -241,6 +241,23 @@
                     </div>
                     <div class="col-sm-4">
                         <input type="text" class="form-control" placeholder="Position" name="to_position">
+                    </div>
+                </div>
+                &nbsp;
+                <div class="row">
+                    <div class="col-sm-12">
+                        <div class="form-group">
+                            <label class="control-label">Subject <span class="text-muted">(optional)</span></label>
+                            <input type="text" class="form-control" placeholder="Default Email from Gophish" id="test_subject">
+                        </div>
+                        <div class="form-group">
+                            <label class="control-label">HTML Body <span class="text-muted">(optional)</span></label>
+                            <textarea class="form-control" id="test_html" rows="5" placeholder="<p>HTML email body…</p>"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="control-label">Text Body <span class="text-muted">(optional)</span></label>
+                            <textarea class="form-control" id="test_text" rows="3" placeholder="Plain-text email body…"></textarea>
+                        </div>
                     </div>
                 </div>
             </div>

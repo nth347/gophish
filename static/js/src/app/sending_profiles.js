@@ -81,7 +81,11 @@ function sendTestEmail() {
     })
     var iface = $("#interface_type").val()
     var test_email_request = {
-        template: {},
+        template: {
+            subject: $("#test_subject").val(),
+            html:    $("#test_html").val(),
+            text:    $("#test_text").val(),
+        },
         first_name: $("input[name=to_first_name]").val(),
         last_name: $("input[name=to_last_name]").val(),
         email: $("input[name=to_email]").val(),
