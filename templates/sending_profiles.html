@@ -52,12 +52,14 @@
                         <select class="form-control" id="interface_type">
                             <option value="SMTP">SMTP</option>
                             <option value="HTTP">HTTP (REST API)</option>
+                            <option value="Gmail">Gmail (App Password)</option>
+                            <option value="OutlookOAuth2">Outlook (OAuth2)</option>
                         </select>
-                        <label class="control-label" for="from">SMTP From: <i class="fa fa-question-circle"
-                                data-toggle="tooltip" data-placement="right" title="Set this to an email address from your sending domain to bypass SPF-checks. You can set the Envelope Sender in Email Templates. The Envelope Sender is shown to the user."></i></label>
-                        <input type="text" class="form-control" placeholder="test@example.com" id="from"
+                        <label class="control-label" for="from" id="from_label">From Address: <i class="fa fa-question-circle"
+                                data-toggle="tooltip" data-placement="right" title="The sender address shown on outgoing emails. For Gmail and Outlook this must match the authenticated account."></i></label>
+                        <input type="text" class="form-control" placeholder="sender@example.com" id="from"
                             required />
-                        <div class="checkbox checkbox-primary">
+                        <div class="checkbox checkbox-primary" id="ignore_cert_errors_row">
                             <input id="ignore_cert_errors" type="checkbox" checked>
                             <label for="ignore_cert_errors">Ignore Certificate Errors <i class="fa fa-question-circle"
                                     data-toggle="tooltip" data-placement="right" title="Ignore common certificate errors such as self-signed certs (exposes you to MiTM attacks - use carefully!)"></i></label>
@@ -97,6 +99,38 @@
                             <tbody>
                             </tbody>
                         </table>
+                    </div>
+                    <!-- Gmail App Password-specific fields -->
+                    <div id="gmail_fields" style="display:none;">
+                        <div class="form-group">
+                            <label class="control-label" for="gmail_password">App Password <i class="fa fa-question-circle"
+                                    data-toggle="tooltip" data-placement="right" title="Generate an App Password at myaccount.google.com/apppasswords. The SMTP From address above must be your Gmail address."></i>:</label>
+                            <input type="password" class="form-control" placeholder="xxxx xxxx xxxx xxxx" id="gmail_password" />
+                        </div>
+                    </div>
+                    <!-- Outlook OAuth2-specific fields -->
+                    <div id="outlook_fields" style="display:none;">
+                        <div class="form-group">
+                            <label class="control-label" for="outlook_client_id">Azure App Client ID <i class="fa fa-question-circle"
+                                    data-toggle="tooltip" data-placement="right" title="Register an app in portal.azure.com → Azure Active Directory → App registrations. Enable Mail.Send (delegated) and Allow public client flows. The Client ID is auto-filled when you paste the token cache below."></i>:</label>
+                            <input type="text" class="form-control" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" id="outlook_client_id" />
+                        </div>
+                        <div class="form-group">
+                            <label class="control-label" for="outlook_token_cache_input">Token Cache (JSON) <i class="fa fa-question-circle"
+                                    data-toggle="tooltip" data-placement="right" title="Run the outlook_oauth2.py script to authenticate, then paste the full contents of token_cache.json here. Leave blank to keep the existing token."></i>:</label>
+                            <p class="help-block" style="margin-bottom:4px;">
+                                Run <code>python3 ~/Tools/sendmail_scripts/outlook_oauth2.py</code>, complete sign-in,
+                                then paste the contents of <code>token_cache.json</code> here.
+                            </p>
+                            <textarea class="form-control" id="outlook_token_cache_input" rows="5"
+                                placeholder='{"AccessToken": {...}, "RefreshToken": {...}, ...}'></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="control-label">Authentication Status:</label>
+                            <div id="outlook_auth_status" class="alert alert-warning" style="padding:6px 10px; margin-bottom:0;">
+                                Not authenticated
+                            </div>
+                        </div>
                     </div>
                     <!-- HTTP (REST API)-specific fields -->
                     <div id="http_fields" style="display:none;">

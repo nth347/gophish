@@ -22,21 +22,24 @@ func (as *Server) SendingProfiles(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 		}
 		JSONResponse(w, ss, http.StatusOK)
-	//POST: Create a new SMTP and return it as JSON
 	case r.Method == "POST":
 		s := models.SMTP{}
-		// Put the request into a page
 		err := json.NewDecoder(r.Body).Decode(&s)
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid request"}, http.StatusBadRequest)
 			return
 		}
-		// Check to make sure the name is unique
 		_, err = models.GetSMTPByName(s.Name, ctx.Get(r, "user_id").(int64))
 		if err != gorm.ErrRecordNotFound {
 			JSONResponse(w, models.Response{Success: false, Message: "SMTP name already in use"}, http.StatusConflict)
 			log.Error(err)
 			return
+		}
+		if s.Interface == models.InterfaceTypeOutlookOAuth2 && s.OutlookTokenCacheInput != "" {
+			if err := applyOutlookTokenInput(&s); err != nil {
+				JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
+				return
+			}
 		}
 		s.ModifiedDate = time.Now().UTC()
 		s.UserId = ctx.Get(r, "user_id").(int64)
@@ -49,8 +52,7 @@ func (as *Server) SendingProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// SendingProfile contains functions to handle the GET'ing, DELETE'ing, and PUT'ing
-// of a SMTP object
+// SendingProfile handles GET / DELETE / PUT for a single SMTP object.
 func (as *Server) SendingProfile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, _ := strconv.ParseInt(vars["id"], 0, 64)
@@ -70,27 +72,55 @@ func (as *Server) SendingProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		JSONResponse(w, models.Response{Success: true, Message: "SMTP Deleted Successfully"}, http.StatusOK)
 	case r.Method == "PUT":
-		s = models.SMTP{}
-		err = json.NewDecoder(r.Body).Decode(&s)
+		updated := models.SMTP{}
+		err = json.NewDecoder(r.Body).Decode(&updated)
 		if err != nil {
 			log.Error(err)
 		}
-		if s.Id != id {
+		if updated.Id != id {
 			JSONResponse(w, models.Response{Success: false, Message: "/:id and /:smtp_id mismatch"}, http.StatusBadRequest)
 			return
 		}
-		err = s.Validate()
+		if updated.Interface == models.InterfaceTypeOutlookOAuth2 {
+			if updated.OutlookTokenCacheInput != "" {
+				if err := applyOutlookTokenInput(&updated); err != nil {
+					JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
+					return
+				}
+			} else {
+				// Keep the token that was already stored — the PUT body won't
+				// include it because OutlookTokenCache is json:"-".
+				updated.OutlookTokenCache = s.OutlookTokenCache
+			}
+		}
+		err = updated.Validate()
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 			return
 		}
-		s.ModifiedDate = time.Now().UTC()
-		s.UserId = ctx.Get(r, "user_id").(int64)
-		err = models.PutSMTP(&s)
+		updated.ModifiedDate = time.Now().UTC()
+		updated.UserId = ctx.Get(r, "user_id").(int64)
+		err = models.PutSMTP(&updated)
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: "Error updating page"}, http.StatusInternalServerError)
 			return
 		}
-		JSONResponse(w, s, http.StatusOK)
+		JSONResponse(w, updated, http.StatusOK)
 	}
+}
+
+func applyOutlookTokenInput(s *models.SMTP) error {
+	token, err := models.ImportOutlookTokenCache(s.OutlookTokenCacheInput)
+	if err != nil {
+		return err
+	}
+	tokenJSON, err := json.Marshal(token)
+	if err != nil {
+		return err
+	}
+	s.OutlookTokenCache = string(tokenJSON)
+	if s.OutlookClientID == "" {
+		s.OutlookClientID = models.ExtractClientIDFromMSAL(s.OutlookTokenCacheInput)
+	}
+	return nil
 }

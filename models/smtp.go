@@ -33,8 +33,10 @@ func (d *Dialer) Dial() (mailer.Sender, error) {
 
 // Interface types for a sending profile
 const (
-	InterfaceTypeSMTP = "SMTP"
-	InterfaceTypeHTTP = "HTTP"
+	InterfaceTypeSMTP          = "SMTP"
+	InterfaceTypeHTTP          = "HTTP"
+	InterfaceTypeGmail         = "Gmail"
+	InterfaceTypeOutlookOAuth2 = "OutlookOAuth2"
 )
 
 // SMTP contains the attributes needed to handle the sending of campaign emails
@@ -71,6 +73,11 @@ type SMTP struct {
 	// HTTPBatchSize is the number of recipients to include in a single HTTP
 	// request. A value <= 1 sends one request per recipient.
 	HTTPBatchSize int `json:"http_batch_size" gorm:"column:http_batch_size"`
+
+	OutlookClientID        string `json:"outlook_client_id" gorm:"column:outlook_client_id"`
+	OutlookTokenCache      string `json:"-" gorm:"column:outlook_token_cache"`
+	OutlookAuthenticated   bool   `json:"outlook_authenticated" gorm:"-"`
+	OutlookTokenCacheInput string `json:"outlook_token_cache_input" gorm:"-"`
 }
 
 // Header contains the fields and methods for a sending profile to have
@@ -109,17 +116,34 @@ var ErrHTTPBodyNotSpecified = errors.New("No HTTP request body specified")
 // ErrInvalidHTTPURL indicates that the HTTP URL is not a valid absolute URL
 var ErrInvalidHTTPURL = errors.New("Invalid HTTP URL")
 
+// ErrGmailAppPasswordNotSpecified is thrown when a Gmail profile has no app password
+var ErrGmailAppPasswordNotSpecified = errors.New("No Gmail App Password specified")
+
+// ErrOutlookClientIDNotSpecified is thrown when an Outlook OAuth2 profile has no Azure Client ID
+var ErrOutlookClientIDNotSpecified = errors.New("No Azure Client ID specified")
+
+// ErrOutlookNotAuthenticated is thrown when sending is attempted before completing OAuth2 authentication
+var ErrOutlookNotAuthenticated = errors.New("Outlook OAuth2 profile not authenticated - open the profile settings, run the outlook_oauth2.py script, paste the token_cache.json content, and save")
+
 // TableName specifies the database tablename for Gorm to use
 func (s SMTP) TableName() string {
 	return "smtp"
 }
 
+func (s *SMTP) AfterFind() error {
+	s.OutlookAuthenticated = s.OutlookTokenCache != ""
+	return nil
+}
+
 // Validate ensures that SMTP configs/connections are valid
 func (s *SMTP) Validate() error {
-	// HTTP sending profiles use a separate set of fields, so they have their
-	// own validation rules.
-	if s.Interface == InterfaceTypeHTTP {
+	switch s.Interface {
+	case InterfaceTypeHTTP:
 		return s.validateHTTP()
+	case InterfaceTypeGmail:
+		return s.validateGmail()
+	case InterfaceTypeOutlookOAuth2:
+		return s.validateOutlookOAuth2()
 	}
 	switch {
 	case s.FromAddress == "":
@@ -144,6 +168,34 @@ func (s *SMTP) Validate() error {
 	if err != nil {
 		return ErrInvalidHost
 	}
+	return err
+}
+
+func (s *SMTP) validateGmail() error {
+	switch {
+	case s.FromAddress == "":
+		return ErrFromAddressNotSpecified
+	case !validateFromAddress(s.FromAddress):
+		return ErrInvalidFromAddress
+	case s.Password == "":
+		return ErrGmailAppPasswordNotSpecified
+	}
+	_, err := mail.ParseAddress(s.FromAddress)
+	return err
+}
+
+func (s *SMTP) validateOutlookOAuth2() error {
+	switch {
+	case s.FromAddress == "":
+		return ErrFromAddressNotSpecified
+	case !validateFromAddress(s.FromAddress):
+		return ErrInvalidFromAddress
+	case s.OutlookClientID == "":
+		return ErrOutlookClientIDNotSpecified
+	case s.OutlookTokenCache == "":
+		return ErrOutlookNotAuthenticated
+	}
+	_, err := mail.ParseAddress(s.FromAddress)
 	return err
 }
 
@@ -177,27 +229,40 @@ func (s *SMTP) validateHTTP() error {
 
 // GetDialer returns a dialer for the given SMTP profile
 func (s *SMTP) GetDialer() (mailer.Dialer, error) {
-	// HTTP sending profiles deliver mail over an HTTP API instead of SMTP, so
-	// they return a dedicated dialer that the mailer recognizes and routes
-	// through the HTTP send path.
-	if s.Interface == InterfaceTypeHTTP {
+	switch s.Interface {
+	case InterfaceTypeHTTP:
+		// HTTP sending profiles deliver mail over an HTTP API instead of SMTP.
 		return &HTTPDialer{profile: *s}, nil
+	case InterfaceTypeGmail:
+		// Gmail App Password: SMTP SSL on port 465, username = From address.
+		d := gomail.NewWithDialer(dialer.Dialer(), "smtp.gmail.com", 465, s.FromAddress, s.Password)
+		d.TLSConfig = &tls.Config{ServerName: "smtp.gmail.com"}
+		hostname, err := os.Hostname()
+		if err != nil {
+			log.Error(err)
+			hostname = "localhost"
+		}
+		d.LocalName = hostname
+		return &Dialer{d}, nil
+	case InterfaceTypeOutlookOAuth2:
+		// Outlook OAuth2 requires authentication before sending.
+		if s.OutlookTokenCache == "" {
+			return nil, ErrOutlookNotAuthenticated
+		}
+		return &OutlookOAuth2Dialer{profile: *s}, nil
 	}
-	// Setup the message and dial
+	// Default: plain SMTP
 	hp := strings.Split(s.Host, ":")
 	if len(hp) < 2 {
 		hp = append(hp, "25")
 	}
 	host := hp[0]
-	// Any issues should have been caught in validation, but we'll
-	// double check here.
 	port, err := strconv.Atoi(hp[1])
 	if err != nil {
 		log.Error(err)
 		return nil, err
 	}
-	dialer := dialer.Dialer()
-	d := gomail.NewWithDialer(dialer, host, port, s.Username, s.Password)
+	d := gomail.NewWithDialer(dialer.Dialer(), host, port, s.Username, s.Password)
 	d.TLSConfig = &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: s.IgnoreCertErrors,
