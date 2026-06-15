@@ -48,17 +48,37 @@ func (d *OutlookOAuth2Dialer) SendEmail(ctx context.Context, content *mailer.Ema
 		return fmt.Errorf("failed to get Outlook access token: %v", err)
 	}
 
-	payload := map[string]interface{}{
-		"message": map[string]interface{}{
-			"subject": content.Subject,
-			"body":    map[string]string{"contentType": "HTML", "content": content.HTML},
-			"toRecipients": []map[string]interface{}{
-				{"emailAddress": map[string]string{"address": content.To}},
-			},
-			"from": map[string]interface{}{
-				"emailAddress": map[string]string{"address": d.profile.FromAddress},
-			},
+	fromAddr := map[string]string{"address": d.profile.FromAddress}
+	if content.FromName != "" {
+		fromAddr["name"] = content.FromName
+	}
+
+	message := map[string]interface{}{
+		"subject": content.Subject,
+		"body":    map[string]string{"contentType": "HTML", "content": content.HTML},
+		"toRecipients": []map[string]interface{}{
+			{"emailAddress": map[string]string{"address": content.To}},
 		},
+		"from": map[string]interface{}{
+			"emailAddress": fromAddr,
+		},
+	}
+
+	if len(content.Attachments) > 0 {
+		attachments := make([]map[string]interface{}, 0, len(content.Attachments))
+		for _, a := range content.Attachments {
+			attachments = append(attachments, map[string]interface{}{
+				"@odata.type":  "#microsoft.graph.fileAttachment",
+				"name":         a.Filename,
+				"contentType":  a.Type,
+				"contentBytes": a.Content,
+			})
+		}
+		message["attachments"] = attachments
+	}
+
+	payload := map[string]interface{}{
+		"message":         message,
 		"saveToSentItems": "true",
 	}
 	body, err := json.Marshal(payload)
