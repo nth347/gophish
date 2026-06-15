@@ -234,16 +234,9 @@ func (s *SMTP) GetDialer() (mailer.Dialer, error) {
 		// HTTP sending profiles deliver mail over an HTTP API instead of SMTP.
 		return &HTTPDialer{profile: *s}, nil
 	case InterfaceTypeGmail:
-		// Gmail App Password: SMTP SSL on port 465, username = From address.
-		d := gomail.NewWithDialer(dialer.Dialer(), "smtp.gmail.com", 465, s.FromAddress, s.Password)
-		d.TLSConfig = &tls.Config{ServerName: "smtp.gmail.com"}
-		hostname, err := os.Hostname()
-		if err != nil {
-			log.Error(err)
-			hostname = "localhost"
-		}
-		d.LocalName = hostname
-		return &Dialer{d}, nil
+		// Gmail App Password: build a Gmail-identical MIME message and deliver
+		// it over an implicit-TLS SMTP connection to smtp.gmail.com:465.
+		return &GmailSMTPSender{profile: *s}, nil
 	case InterfaceTypeOutlookOAuth2:
 		// Outlook OAuth2 requires authentication before sending.
 		if s.OutlookTokenCache == "" {
