@@ -64,7 +64,11 @@ func (m *MailLog) Backoff(reason error) error {
 	if err != nil {
 		return err
 	}
-	if m.SendAttempt == MaxSendAttempts {
+	maxAttempts := MaxSendAttempts
+	if m.cachedCampaign != nil && m.cachedCampaign.SMTP.MaxSendAttempts > 0 {
+		maxAttempts = m.cachedCampaign.SMTP.MaxSendAttempts
+	}
+	if m.SendAttempt == maxAttempts {
 		r.HandleEmailError(ErrMaxSendAttempts)
 		return ErrMaxSendAttempts
 	}
@@ -151,6 +155,14 @@ func (m *MailLog) CacheCampaign(campaign *Campaign) error {
 	}
 	m.cachedCampaign = campaign
 	return nil
+}
+
+func (m *MailLog) GetSendDelay() (time.Duration, int) {
+	if m.cachedCampaign == nil {
+		return 0, 0
+	}
+	return time.Duration(m.cachedCampaign.SMTP.SendDelay) * time.Second,
+		m.cachedCampaign.SMTP.SendJitterPct
 }
 
 func (m *MailLog) GetSmtpFrom() (string, error) {

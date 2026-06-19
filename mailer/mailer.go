@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/textproto"
 	"strings"
+	"time"
 
 	"github.com/gophish/gomail"
 	log "github.com/gophish/gophish/logger"
@@ -59,15 +61,6 @@ type Mail interface {
 	GetSmtpFrom() (string, error)
 }
 
-// EmailContent holds the rendered components of an email message. It is used by
-// transports that need the individual parts of a message (recipient, subject,
-// body, ...) rather than a serialized MIME body - for example the HTTP API
-// transport, which embeds these parts into a request body template.
-//
-// To always holds the first/primary recipient for convenience and backwards
-// compatibility. Recipients holds every recipient included in the request,
-// which lets a single HTTP request be addressed to multiple users (e.g.
-// "to": {{.Recipients | json}}).
 type EmailContent struct {
 	From        string
 	FromName    string
@@ -79,52 +72,59 @@ type EmailContent struct {
 	Attachments []EmailAttachment
 }
 
-// EmailAttachment holds a single attachment ready to be embedded into an HTTP
-// API request body. Content is the base64-encoded file content (after any
-// template variables in the file have been applied), Filename is the file name
-// and Type is the MIME content type.
 type EmailAttachment struct {
 	Content  string
 	Filename string
 	Type     string
 }
 
-// HTTPSender is implemented by Dialers that deliver mail over an HTTP API
-// instead of SMTP. When the mail worker encounters a Dialer that also
-// implements this interface, it renders each message's content and calls
-// SendEmail instead of using the SMTP send flow.
 type HTTPSender interface {
-	// SendEmail issues a single HTTP request for the provided content. The
-	// content may carry more than one recipient in Recipients.
 	SendEmail(ctx context.Context, content *EmailContent) error
-	// BatchSize reports how many recipients should be combined into a single
-	// HTTP request. A value <= 1 means one request per recipient.
 	BatchSize() int
 }
 
-// HTTPGenerator is implemented by Mail instances that can render their content
-// for delivery over a non-SMTP transport such as the HTTP API transport.
 type HTTPGenerator interface {
 	GenerateHTTP() (*EmailContent, error)
 }
 
-// MailWorker is the worker that receives slices of emails
-// on a channel to send. It's assumed that every slice of emails received is meant
-// to be sent to the same server.
+type SendDelayer interface {
+	GetSendDelay() (delay time.Duration, jitterPct int)
+}
+
+func sleepWithDelay(ctx context.Context, m Mail) {
+	sd, ok := m.(SendDelayer)
+	if !ok {
+		return
+	}
+	delay, pct := sd.GetSendDelay()
+	if delay <= 0 {
+		return
+	}
+	if pct > 0 {
+		window := int64(delay) * int64(pct) / 100
+		offset := rand.Int63n(window*2+1) - window
+		d := int64(delay) + offset
+		if d < 0 {
+			d = 0
+		}
+		delay = time.Duration(d)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(delay):
+	}
+}
+
 type MailWorker struct {
 	queue chan []Mail
 }
 
-// NewMailWorker returns an instance of MailWorker with the mail queue
-// initialized.
 func NewMailWorker() *MailWorker {
 	return &MailWorker{
 		queue: make(chan []Mail),
 	}
 }
 
-// Start launches the mail worker to begin listening on the Queue channel
-// for new slices of Mail instances to process.
 func (mw *MailWorker) Start(ctx context.Context) {
 	for {
 		select {
@@ -137,8 +137,6 @@ func (mw *MailWorker) Start(ctx context.Context) {
 					errorMail(err, ms)
 					return
 				}
-				// If the dialer delivers mail over an HTTP API rather than
-				// SMTP, use the dedicated HTTP send path.
 				if httpSender, ok := dialer.(HTTPSender); ok {
 					sendMailHTTP(ctx, httpSender, ms)
 					return
@@ -209,6 +207,9 @@ func sendMail(ctx context.Context, dialer Dialer, ms []Mail) {
 			return
 		default:
 			break
+		}
+		if i > 0 {
+			sleepWithDelay(ctx, m)
 		}
 		message.Reset()
 		err = m.Generate(message)
@@ -287,21 +288,12 @@ func sendMail(ctx context.Context, dialer Dialer, ms []Mail) {
 	}
 }
 
-// renderedMail pairs a Mail instance with its rendered HTTP content so the
-// batching logic can map send results back onto the originating messages.
 type renderedMail struct {
 	mail    Mail
 	content *EmailContent
 }
 
-// sendMailHTTP sends the provided Mail instances over an HTTP API using the
-// provided HTTPSender. Messages are rendered into their component parts and
-// posted to the API. Depending on the sender's batch size, each request can
-// carry a single recipient or many, which lets a single sending profile fan
-// out to a lot of users in a campaign. The sender is responsible for enforcing
-// any configured rate limits.
 func sendMailHTTP(ctx context.Context, sender HTTPSender, ms []Mail) {
-	// Render every message up front, erroring out any that fail to render.
 	rendered := make([]renderedMail, 0, len(ms))
 	for _, m := range ms {
 		gen, ok := m.(HTTPGenerator)
@@ -330,15 +322,15 @@ func sendMailHTTP(ctx context.Context, sender HTTPSender, ms []Mail) {
 		default:
 			break
 		}
+		if i > 0 && len(rendered) > 0 {
+			sleepWithDelay(ctx, rendered[i].mail)
+		}
 		end := i + batchSize
 		if end > len(rendered) {
 			end = len(rendered)
 		}
 		chunk := rendered[i:end]
 
-		// The first message provides the shared content (subject, body and
-		// sender); the recipients of every message in the chunk are combined
-		// into a single request.
 		base := chunk[0].content
 		recipients := make([]string, 0, len(chunk))
 		for _, rm := range chunk {

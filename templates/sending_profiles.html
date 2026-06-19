@@ -179,27 +179,24 @@
                             <label class="control-label" for="http_batch_size">Recipients per request <i class="fa fa-question-circle"
                                     data-toggle="tooltip" data-placement="right" title="Number of recipients to include in a single HTTP request via {{"{{"}}.Recipients{{"}}"}}. Leave at 1 for one request per recipient (required for per-recipient personalization and tracking). Set higher to batch multiple users into one API call."></i>:</label>
                             <input type="number" min="1" class="form-control" id="http_batch_size" value="1" />
-                            <label class="control-label">Rate Limit <i class="fa fa-question-circle"
-                                    data-toggle="tooltip" data-placement="right" title="Maximum number of HTTP requests allowed per time window. 0 means no limit. Limits are counted in requests, so a batched request to many recipients counts as one."></i>:</label>
-                            <div class="row">
-                                <div class="col-md-4">
-                                    <div class="input-group">
-                                        <input type="number" min="0" class="form-control" id="http_rate_per_second" value="0" placeholder="0" />
-                                        <span class="input-group-addon">/ second</span>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="input-group">
-                                        <input type="number" min="0" class="form-control" id="http_rate_per_minute" value="0" placeholder="0" />
-                                        <span class="input-group-addon">/ minute</span>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="input-group">
-                                        <input type="number" min="0" class="form-control" id="http_rate_per_hour" value="0" placeholder="0" />
-                                        <span class="input-group-addon">/ hour</span>
-                                    </div>
-                                </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="control-label">Rate Limiting <i class="fa fa-question-circle"
+                                data-toggle="tooltip" data-placement="right" title="Controls how fast emails are sent. Delay is the pause between each email. Jitter adds randomness to the delay (±N%). Max Attempts overrides the default retry limit (0 = use default of 8)."></i></label>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label class="control-label" for="send_delay">Delay (seconds)</label>
+                                <input type="number" min="0" class="form-control" id="send_delay" value="0" placeholder="0" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="control-label" for="send_jitter_pct">Jitter %</label>
+                                <input type="number" min="0" max="100" class="form-control" id="send_jitter_pct" value="0" placeholder="0" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="control-label" for="max_send_attempts">Max Attempts <i class="fa fa-question-circle"
+                                        data-toggle="tooltip" data-placement="right" title="Maximum retries per email before marking it failed. 0 uses the global default (8)."></i></label>
+                                <input type="number" min="0" class="form-control" id="max_send_attempts" value="0" placeholder="0" />
                             </div>
                         </div>
                     </div>

@@ -53,31 +53,22 @@ type SMTP struct {
 	Headers          []Header  `json:"headers"`
 	ModifiedDate     time.Time `json:"modified_date"`
 
-	// HTTP API interface fields. These are only used when Interface is
-	// InterfaceTypeHTTP. They let a sending profile deliver email by calling
-	// an arbitrary HTTP REST API (e.g. a mail-sending provider) rather than
-	// connecting to an SMTP server.
 	HTTPMethod      string `json:"http_method" gorm:"column:http_method"`
 	HTTPURL         string `json:"http_url" gorm:"column:http_url"`
 	HTTPHeaders     string `json:"http_headers" gorm:"column:http_headers"`
 	HTTPContentType string `json:"http_content_type" gorm:"column:http_content_type"`
 	HTTPBody        string `json:"http_body" gorm:"column:http_body"`
 
-	// HTTP rate limiting. A value of 0 for a given window means that window is
-	// not rate limited. Limits are enforced per sending profile and counted in
-	// HTTP requests (so one batched request to many recipients counts once).
-	HTTPRatePerSecond int `json:"http_rate_per_second" gorm:"column:http_rate_per_second"`
-	HTTPRatePerMinute int `json:"http_rate_per_minute" gorm:"column:http_rate_per_minute"`
-	HTTPRatePerHour   int `json:"http_rate_per_hour" gorm:"column:http_rate_per_hour"`
-
-	// HTTPBatchSize is the number of recipients to include in a single HTTP
-	// request. A value <= 1 sends one request per recipient.
 	HTTPBatchSize int `json:"http_batch_size" gorm:"column:http_batch_size"`
 
 	OutlookClientID        string `json:"outlook_client_id" gorm:"column:outlook_client_id"`
 	OutlookTokenCache      string `json:"-" gorm:"column:outlook_token_cache"`
 	OutlookAuthenticated   bool   `json:"outlook_authenticated" gorm:"-"`
 	OutlookTokenCacheInput string `json:"outlook_token_cache_input" gorm:"-"`
+
+	MaxSendAttempts int `json:"max_send_attempts" gorm:"column:max_send_attempts"`
+	SendDelay       int `json:"send_delay" gorm:"column:send_delay"`
+	SendJitterPct   int `json:"send_jitter_pct" gorm:"column:send_jitter_pct"`
 }
 
 // Header contains the fields and methods for a sending profile to have

@@ -107,9 +107,9 @@ function sendTestEmail() {
             http_content_type: $("#http_content_type").val(),
             http_body: $("#http_body").val(),
             http_batch_size: parseInt($("#http_batch_size").val(), 10) || 0,
-            http_rate_per_second: parseInt($("#http_rate_per_second").val(), 10) || 0,
-            http_rate_per_minute: parseInt($("#http_rate_per_minute").val(), 10) || 0,
-            http_rate_per_hour: parseInt($("#http_rate_per_hour").val(), 10) || 0,
+            send_delay: parseInt($("#send_delay").val(), 10) || 0,
+            send_jitter_pct: parseInt($("#send_jitter_pct").val(), 10) || 0,
+            max_send_attempts: parseInt($("#max_send_attempts").val(), 10) || 0,
         }
     }
     var btnHtml = $("#sendTestModalSubmit").html()
@@ -141,6 +141,9 @@ function save(idx) {
     profile.interface_type = iface
     profile.from_address   = $("#from").val()
     profile.ignore_cert_errors = $("#ignore_cert_errors").prop("checked")
+    profile.send_delay       = parseInt($("#send_delay").val(), 10) || 0
+    profile.send_jitter_pct  = parseInt($("#send_jitter_pct").val(), 10) || 0
+    profile.max_send_attempts = parseInt($("#max_send_attempts").val(), 10) || 0
 
     if (iface === "Gmail") {
         profile.password = $("#gmail_password").val()
@@ -161,9 +164,6 @@ function save(idx) {
         profile.http_content_type = $("#http_content_type").val()
         profile.http_body        = $("#http_body").val()
         profile.http_batch_size  = parseInt($("#http_batch_size").val(), 10) || 0
-        profile.http_rate_per_second = parseInt($("#http_rate_per_second").val(), 10) || 0
-        profile.http_rate_per_minute = parseInt($("#http_rate_per_minute").val(), 10) || 0
-        profile.http_rate_per_hour   = parseInt($("#http_rate_per_hour").val(), 10) || 0
     }
 
     if (idx != -1) {
@@ -207,9 +207,9 @@ function dismiss() {
     $("#http_body").val("")
     $("#http_body_sample").val("")
     $("#http_batch_size").val("1")
-    $("#http_rate_per_second").val("0")
-    $("#http_rate_per_minute").val("0")
-    $("#http_rate_per_hour").val("0")
+    $("#send_delay").val("0")
+    $("#send_jitter_pct").val("0")
+    $("#max_send_attempts").val("0")
     $("#headersTable").dataTable().DataTable().clear().draw()
     toggleInterface()
     $("#modal").modal('hide')
@@ -274,10 +274,10 @@ function edit(idx) {
         $("#http_content_type").val(profile.http_content_type)
         $("#http_body").val(profile.http_body)
         $("#http_batch_size").val(profile.http_batch_size || 1)
-        $("#http_rate_per_second").val(profile.http_rate_per_second || 0)
-        $("#http_rate_per_minute").val(profile.http_rate_per_minute || 0)
-        $("#http_rate_per_hour").val(profile.http_rate_per_hour || 0)
         $.each(profile.headers, function (i, record) { addCustomHeader(record.key, record.value) })
+        $("#send_delay").val(profile.send_delay || 0)
+        $("#send_jitter_pct").val(profile.send_jitter_pct || 0)
+        $("#max_send_attempts").val(profile.max_send_attempts || 0)
     } else {
         currentProfileId = -1
         $("#profileModalLabel").text("New Sending Profile")
@@ -311,9 +311,9 @@ function copy(idx) {
     $("#http_content_type").val(profile.http_content_type)
     $("#http_body").val(profile.http_body)
     $("#http_batch_size").val(profile.http_batch_size || 1)
-    $("#http_rate_per_second").val(profile.http_rate_per_second || 0)
-    $("#http_rate_per_minute").val(profile.http_rate_per_minute || 0)
-    $("#http_rate_per_hour").val(profile.http_rate_per_hour || 0)
+    $("#send_delay").val(profile.send_delay || 0)
+    $("#send_jitter_pct").val(profile.send_jitter_pct || 0)
+    $("#max_send_attempts").val(profile.max_send_attempts || 0)
     $.each(profile.headers, function (i, record) { addCustomHeader(record.key, record.value) })
     toggleInterface()
 }
